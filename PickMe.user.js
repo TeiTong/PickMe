@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PickMe
 // @namespace    http://tampermonkey.net/
-// @version      2.6.9
+// @version      3.0.0
 // @description  Plugin d'aide à la navigation pour les membres du discord Amazon Vine FR
 // @author       Créateur/Codeur principal : MegaMan / Codeur secondaire : Sulff / Testeurs : Louise, JohnnyBGoody, L'avocat du Diable et Popato (+ du code de lelouch_di_britannia, FMaz008 et Thorvarium)
 // @match        https://www.amazon.fr/vine/vine-items
@@ -14,8 +14,9 @@
 // @match        https://www.amazon.fr/checkout*
 // @match        https://www.amazon.fr/*
 // @match        https://pickme.alwaysdata.net/*
+// @match        https://vinepick.me/*
 // @exclude      https://www.amazon.fr/vine/vine-items?search=*
-// @icon         https://pickme.alwaysdata.net/img/PM-ICO-2.png
+// @icon         https://vinepick.me/img/PM-ICO-2.png
 // @updateURL    https://raw.githubusercontent.com/teitong/pickme/main/PickMe.user.js
 // @downloadURL  https://raw.githubusercontent.com/teitong/pickme/main/PickMe.user.js
 // @grant        GM_setValue
@@ -25,7 +26,9 @@
 // @grant        GM_listValues
 // @run-at       document-start
 // @noframes
-// @require      https://code.jquery.com/jquery-3.7.1.min.js
+// @require      https://raw.githubusercontent.com/teitong/reviewremember/main/ReviewRememberPM.user.js??v=1.9
+// @require      https://vinepick.me/scripts/jquery-3.7.1.min.js
+// @require      https://vinepick.me/scripts/heic2any.min.js
 //==/UserScript==
 
 /*
@@ -43,12 +46,17 @@ NOTES:
             var apiOk = GM_getValue("apiToken", false);
         }
 
+        const baseUrlPickme = "https://vinepick.me";
+        const hostnamePickMe = new URL(baseUrlPickme).hostname;
+
         let defautTab = GM_getValue('defautTab', 'AFA');
         let checkoutRedirect = GM_getValue('checkoutRedirect', true);
         let checkoutButtonUp = GM_getValue('checkoutButtonUp', true);
         let mobileEnabled = GM_getValue("mobileEnabled", false);
 
         let ordersEnabled = GM_getValue('ordersEnabled', true);
+
+        let headerEnabled = GM_getValue("headerEnabled", false);
 
         GM_setValue("defautTab", defautTab);
         GM_setValue("checkoutRedirect", checkoutRedirect);
@@ -58,12 +66,49 @@ NOTES:
 
         GM_setValue("mobileEnabled", mobileEnabled);
 
+        GM_setValue("headerEnabled", headerEnabled);
+
         const lienVine = {
             'RFY': 'https://www.amazon.fr/vine/vine-items?queue=potluck',
             'AFA': 'https://www.amazon.fr/vine/vine-items?queue=last_chance',
             'AI':  'https://www.amazon.fr/vine/vine-items?queue=encore',
             'ALL': 'https://www.amazon.fr/vine/vine-items?queue=all_items',
         };
+
+        //On applique la suppression du header pour toutes les pages concernées par Vine
+        const urlVine = window.location.href;
+
+        const isAmazonTargetPage = [
+            /^https:\/\/www\.amazon\.fr\/vine\//,
+            /^https:\/\/www\.amazon\.fr\/gp\/buy\/thankyou/,
+            /^https:\/\/www\.amazon\.fr\/checkout/,
+            /^https:\/\/www\.amazon\.fr\/review\/create-review/,
+            /^https:\/\/www\.amazon\.fr\/review\/edit-review/
+        ].some(pattern => pattern.test(urlVine));
+
+        if (isAmazonTargetPage) {
+            //Cacher le header ou non
+            if (headerEnabled) {
+                //Suppression header
+                var styleHeader = document.createElement('style');
+
+                styleHeader.textContent = `
+            body {
+              padding-right: 0px !important;
+            }
+
+            #navbar-main, #nav-main, #skiplink {
+              display: none;
+            }
+
+            .amzn-ss-wrap {
+              display: none !important;
+            }
+            `
+                document.head.appendChild(styleHeader);
+            }
+
+        }
 
         //Page du passage de commande du nouveau checkout
         //Pour tester si le checkout provient bien d'une page vine
@@ -123,7 +168,7 @@ NOTES:
 
                 if (currentUrl !== previousUrl) {
                     clearInterval(interval); //On arrête la surveillance
-                    console.log("Changement d’URL détecté :", currentUrl);
+                    console.log("[PïckMe] Changement d’URL détecté :", currentUrl);
                     checkOut(currentUrl);
                 }
             }, 100); //Vérifie toutes les 100 ms
@@ -147,7 +192,7 @@ NOTES:
                         success: "success"
                     };
                     const formData = new URLSearchParams(data_order);
-                    fetch("https://pickme.alwaysdata.net/shyrka/order", {
+                    fetch(baseUrlPickme + "/shyrka/order", {
                         method: "POST",
                         headers: {
                             "Content-Type": "application/x-www-form-urlencoded"
@@ -264,7 +309,7 @@ NOTES:
         function submitPost(asin) {
             var form = document.createElement('form');
             form.method = 'POST';
-            form.action = 'https://pickme.alwaysdata.net/monsieurconso/top.php';
+            form.action = baseUrlPickme + '/monsieurconso/top.php';
             form.target = '_blank';
 
             var asinField = document.createElement('input');
@@ -311,7 +356,7 @@ NOTES:
                 /*affiliateButton.onclick = function() {
                 submitPost(asin);
             };*/
-                affiliateButton.href = `https://pickme.alwaysdata.net/monsieurconso/product.php?asin=${asin}`;
+                affiliateButton.href = baseUrlPickme + `/monsieurconso/product.php?asin=${asin}`;
                 affiliateButton.innerText = 'Acheter via PickMe';
                 affiliateButton.target = '_blank';
                 var infoText = document.createElement('span'); //Créer l'élément de texte d'explication
@@ -382,12 +427,12 @@ NOTES:
         let hideEnabled = GM_getValue("hideEnabled", true);
         let savedTheme = GM_getValue('selectedTheme', 'default');
 
-        let notifUrl = GM_getValue('notifUrl', 'https://pickme.alwaysdata.net/sw/notif3.mp3');
+        let notifUrl = GM_getValue('notifUrl', baseUrlPickme + '/sw/notif3.mp3');
 
-        let favUrlOn = GM_getValue('favUrlOn', "https://pickme.alwaysdata.net/img/coeurrouge2.png");
-        let favUrlOff = GM_getValue('favUrlOff', "https://pickme.alwaysdata.net/img/coeurgris2.png");
-        let hideUrlOn = GM_getValue('hideUrlOn', "https://pickme.alwaysdata.net/img/eye.png");
-        let hideUrlOff = GM_getValue('hideUrlOff', "https://pickme.alwaysdata.net/img/eyehidden.png");
+        let favUrlOn = GM_getValue('favUrlOn', baseUrlPickme + "/img/coeurrouge2.png");
+        let favUrlOff = GM_getValue('favUrlOff', baseUrlPickme + "/img/coeurgris2.png");
+        let hideUrlOn = GM_getValue('hideUrlOn', baseUrlPickme + "/img/eye.png");
+        let hideUrlOff = GM_getValue('hideUrlOff', baseUrlPickme + "/img/eyehidden.png");
 
         let NSFWEnabled = GM_getValue('NSFWEnabled', false);
         let blurLevel = GM_getValue('blurLevel', '15');
@@ -457,7 +502,7 @@ NOTES:
                 asin: asin,
             });
 
-            return fetch("https://pickme.alwaysdata.net/shyrka/infoasin", {
+            return fetch(baseUrlPickme + "/shyrka/infoasin", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/x-www-form-urlencoded"
@@ -490,7 +535,7 @@ NOTES:
         //Fonction pour demander la permission et afficher la notification
         function requestNotification(title, text, icon, queue = null, page = null, pn = null, cn = null) {
             if (!("Notification" in window)) {
-                console.log("Ce navigateur ne supporte pas les notifications de bureau.");
+                console.log("[PïckMe] Ce navigateur ne supporte pas les notifications de bureau.");
                 return;
             }
             if (Notification.permission === "granted") {
@@ -636,7 +681,7 @@ NOTES:
             window.addEventListener('message', function(event) {
                 //console.log("PickMe :", event);
                 lastNotifId = GM_getValue('lastNotifId', null);
-                if (event.data.type === 'NEW_MESSAGE' && event.origin == "https://pickme.alwaysdata.net" && event.data.id != lastNotifId) {
+                if (event.data.type === 'NEW_MESSAGE' && (event.origin == "https://pickme.alwaysdata.net" || event.origin == baseUrlPickme) && event.data.id != lastNotifId) {
                     lastNotifId = event.data.id;
                     GM_setValue('lastNotifId', lastNotifId);
                     if ((event.data.info.toUpperCase() === "UP" && notifUp) ||
@@ -665,11 +710,11 @@ NOTES:
             });
 
             function addNotifTab() {
-                if (window.location.hostname !== "pickme.alwaysdata.net") {
+                if (window.location.hostname !== "pickme.alwaysdata.net" || window.location.hostname !== hostnamePickMe) {
                     //Initialisation de l'iframe seulement si on est sur le bon domaine
                     var iframe = document.createElement('iframe');
                     iframe.style.display = 'none'; //Rendre l'iframe invisible
-                    iframe.src = "https://pickme.alwaysdata.net/sw/websocket.php?key=" + encodeURIComponent(apiKey);
+                    iframe.src = baseUrlPickme + "/sw/websocket.php?key=" + encodeURIComponent(apiKey);
                     document.body.appendChild(iframe);
                 } else {
                     document.cookie = "pm_apiKey=" + encodeURIComponent(apiKey) + "; path=/; secure";
@@ -685,7 +730,7 @@ NOTES:
 
                     //Créer le lien à ajouter dans le nouvel onglet Notifications
                     var link1 = document.createElement('a');
-                    link1.href = "https://pickme.alwaysdata.net/sw/notification.php?key=" + encodeURIComponent(apiKey);
+                    link1.href = baseUrlPickme + "/sw/notification.php?key=" + encodeURIComponent(apiKey);
                     link1.role = 'tab';
                     link1.setAttribute('aria-selected', 'false');
                     link1.tabIndex = -1;
@@ -726,10 +771,10 @@ NOTES:
         }
 
         //URL des CSS
-        var baseURLCSS = 'https://pickme.alwaysdata.net/';
+        var baseURLCSS = baseUrlPickme + "/";
 
         //Gestion des favoris sur PickMe Web
-        if (window.location.hostname === "pickme.alwaysdata.net" && /^\/[^\/]+\.php$/.test(window.location.pathname)) {
+        if ((window.location.hostname === "pickme.alwaysdata.net" || window.location.hostname === hostnamePickMe) && /^\/[^\/]+\.php$/.test(window.location.pathname)) {
             if (savedTheme == "dark") {
                 loadCSS(baseURLCSS + "style-dark.css");
             }
@@ -759,7 +804,7 @@ NOTES:
             if (apiKeyInput && !errorAlert && (!lastRedirect || now - lastRedirect > 60000)) {
                 if (apiKey) {
                     localStorage.setItem('lastRedirectTime', now);
-                    const redirectUrl = "https://pickme.alwaysdata.net/search.php?key=" + encodeURIComponent(apiKey);
+                    const redirectUrl = baseUrlPickme + "/search.php?key=" + encodeURIComponent(apiKey);
                     window.location.href = redirectUrl;
                 }
             }
@@ -778,7 +823,7 @@ NOTES:
             popup.id = "notePopup";
             popup.style.cssText = `
         position: fixed;
-        z-index: 10001;
+        z-index: 10002;
         left: 50%;
         top: 50%;
         transform: translate(-50%, -50%);
@@ -936,7 +981,7 @@ NOTES:
 
                 //Créer le lien à ajouter dans le nouvel onglet Pickme Web
                 var link2 = document.createElement('a');
-                link2.href = "https://pickme.alwaysdata.net/search.php?key=" + encodeURIComponent(apiKey);
+                link2.href = baseUrlPickme + "/account.php?key=" + encodeURIComponent(apiKey);
                 link2.role = 'tab';
                 link2.setAttribute('aria-selected', 'false');
                 link2.tabIndex = -1;
@@ -969,7 +1014,7 @@ NOTES:
 
                     //Créer l'image à ajouter devant le texte "Bloc-notes"
                     /*var image = document.createElement('img');
-                image.src = 'https://pickme.alwaysdata.net/img/loupe.png';
+                image.src = baseUrlPickme + '/img/loupe.png';
                 image.alt = 'Loupe';
                 image.style.cursor = 'pointer';
                 image.style.marginRight = '5px';
@@ -1055,7 +1100,7 @@ NOTES:
                         current: window.location.href,
                         urls: JSON.stringify(pUrls),
                     });
-                    return fetch("https://pickme.alwaysdata.net/shyrka/omh", {
+                    return fetch(baseUrlPickme + "/shyrka/omh", {
                         method: "POST",
                         headers: {
                             "Content-Type": "application/x-www-form-urlencoded"
@@ -1187,8 +1232,7 @@ NOTES:
             }
         }
 
-
-        if (window.location.href === 'https://pickme.alwaysdata.net/search.php') {
+        if ((window.location.href === 'https://pickme.alwaysdata.net/search.php' || baseUrlPickme + 'search.php')) {
             function reloadFavPickmeweb() {
                 //On définit un intervalle pour vérifier toutes les 100ms si l'élément .top est présent
                 const checkTop = setInterval(function() {
@@ -1338,8 +1382,7 @@ NOTES:
             let taxValue = GM_getValue("taxValue", true);
             let catEnabled = GM_getValue("catEnabled", true);
             let cssEnabled = GM_getValue("cssEnabled", false);
-            let mobileEnabledRR = GM_getValue("mobileEnabledRR", false);
-            let headerEnabled = GM_getValue("headerEnabled", false);
+
             let callUrlEnabled = GM_getValue("callUrlEnabled", false);
             let callUrlFavEnabled = GM_getValue("callUrlFavEnabled", false);
             let callUrlFav = GM_getValue("callUrlFav", "");
@@ -1373,7 +1416,7 @@ NOTES:
 
             //Options avancées
             let onlyETV = GM_getValue('onlyETV', false);
-            let logoPM = GM_getValue('logoPM', 'https://pickme.alwaysdata.net/img/PM.png');
+            let logoPM = GM_getValue('logoPM', baseUrlPickme + '/img/PM.png');
 
             let favSize = GM_getValue('favSize', '23px');
             let favSizeMobile = GM_getValue('favSizeMobile', '15.8px');
@@ -1417,8 +1460,8 @@ NOTES:
 
             let iconVariant = GM_getValue('iconVariant','🛍️');
             let iconLimited = GM_getValue('iconLimited', '⌛');
-            let ballUrlSuccess = GM_getValue('ballUrlSuccess', "https://pickme.alwaysdata.net/img/orderok.png");
-            let ballUrlError = GM_getValue('ballUrlError', "https://pickme.alwaysdata.net/img/ordererror.png");
+            let ballUrlSuccess = GM_getValue('ballUrlSuccess', baseUrlPickme + "/img/orderok.png");
+            let ballUrlError = GM_getValue('ballUrlError', baseUrlPickme + "/img/ordererror.png");
             let ballSize = GM_getValue('ballSize', '28px');
             let ballSizeMobile = GM_getValue('ballSizeMobile', '21px');
             let ballFont = GM_getValue('ballFont', '14px');
@@ -1441,9 +1484,9 @@ NOTES:
             let colorHlHide = GM_getValue('colorHlHide', 'Brown');
 
             let soundRecoEnabled = GM_getValue('soundRecoEnabled', false);
-            let recoSoundUrl = GM_getValue('recoSoundUrl', 'https://pickme.alwaysdata.net/sw/notif3.mp3');
+            let recoSoundUrl = GM_getValue('recoSoundUrl', baseUrlPickme + '/sw/notif3.mp3');
 
-            let newUrl = GM_getValue('newUrl', 'https://pickme.alwaysdata.net/img/new.png');
+            let newUrl = GM_getValue('newUrl', baseUrlPickme + '/img/new.png');
             let catGras = GM_getValue('catGras', false);
             let catManuelReset = GM_getValue('catManuelReset', false);
             let fullTitleLine = GM_getValue('fullTitleLine', '4');
@@ -1451,7 +1494,7 @@ NOTES:
             let firstSeenEnabled = GM_getValue('firstSeenEnabled', true);
             let firstSeenAllTime = GM_getValue('firstSeenAllTime', true);
             let firstSeenOver = GM_getValue('firstSeenOver', false);
-            let firstSeenUrl = GM_getValue('firstSeenUrl', 'https://pickme.alwaysdata.net/img/firstseen.png');
+            let firstSeenUrl = GM_getValue('firstSeenUrl', baseUrlPickme + '/img/firstseen.png');
             let firstSeenWidth = GM_getValue('firstSeenWidth', '120px');
             let firstSeenHeight = GM_getValue('firstSeenHeight', '120px');
             let firstSeenHorizontal = GM_getValue('firstSeenHorizontal', '0px');
@@ -1465,9 +1508,9 @@ NOTES:
             let rondeResume = GM_getValue('rondeResume', true);
             let rondeDelay = GM_getValue('rondeDelay', '5');
             let rondeRandom = GM_getValue('rondeRandom', '5');
-            let rondePlayUrl = GM_getValue('rondePlayUrl', 'https://pickme.alwaysdata.net/img/play.png');
-            let rondeStopUrl = GM_getValue('rondeStopUrl', 'https://pickme.alwaysdata.net/img/stop.png');
-            let rondePauseUrl = GM_getValue('rondePauseUrl', 'https://pickme.alwaysdata.net/img/pause.png');
+            let rondePlayUrl = GM_getValue('rondePlayUrl', baseUrlPickme + '/img/play.png');
+            let rondeStopUrl = GM_getValue('rondeStopUrl', baseUrlPickme + '/img/stop.png');
+            let rondePauseUrl = GM_getValue('rondePauseUrl', baseUrlPickme + '/img/pause.png');
             let rondeFirst = GM_getValue('rondeFirst', false);
             let rondeHide = GM_getValue('rondeHide', false);
             let rondeFixed = GM_getValue('rondeFixed', false);
@@ -1491,6 +1534,8 @@ NOTES:
 
             let colorblindEnabled = GM_getValue('colorblindEnabled', false);
 
+            let forceIos = GM_getValue('forceIos', false);
+
             let oldCheckoutEnabled = GM_getValue('oldCheckoutEnabled', false);
             let checkoutNewTab = GM_getValue('checkoutNewTab', false);
             let showCheckout = GM_getValue('showCheckout', false);
@@ -1506,8 +1551,6 @@ NOTES:
             GM_setValue("taxValue", taxValue);
             GM_setValue("catEnabled", catEnabled);
             GM_setValue("cssEnabled", cssEnabled);
-            GM_setValue("mobileEnabledRR", mobileEnabledRR);
-            GM_setValue("headerEnabled", headerEnabled);
             GM_setValue("callUrlEnabled", callUrlEnabled);
             GM_setValue("callUrlFavEnabled", callUrlFavEnabled);
             GM_setValue("callUrlEnabled", callUrlEnabled);
@@ -1657,6 +1700,8 @@ NOTES:
 
             GM_setValue("colorblindEnabled", colorblindEnabled);
 
+            GM_setValue("forceIos", forceIos);
+
             GM_setValue("oldCheckoutEnabled", oldCheckoutEnabled);
             GM_setValue("checkoutNewTab", checkoutNewTab);
             GM_setValue("showCheckout", showCheckout);
@@ -1667,7 +1712,10 @@ NOTES:
             var produitsCaches = "Produits cachés";
             var toutCacher = "Tout cacher";
             var toutAfficher = "Tout afficher";
-            var copyShare = "Copier pour partager";
+            var copyShare = "Copier pour partager"
+            if (isIOS()) {
+                copyShare = "Générer un partage";
+            }
             if (mobileEnabled) {
                 pageX = "X";
                 produitsVisibles = "Visibles";
@@ -1726,7 +1774,7 @@ NOTES:
                     token: API_TOKEN,
                     url: webhook,
                 });
-                return fetch("https://pickme.alwaysdata.net/shyrka/webhookreco", {
+                return fetch(baseUrlPickme + "/shyrka/webhookreco", {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/x-www-form-urlencoded"
@@ -1793,7 +1841,7 @@ NOTES:
                 if (userInput && isValidUrl(userInput)) {
                     GM_setValue("callUrl", userInput);
                     callUrl = userInput;
-                    console.log("URL enregistrée avec succès :", userInput);
+                    console.log("[PïckMe] URL enregistrée avec succès :", userInput);
                 } else {
                     GM_setValue("callUrl", "");
                     callUrl = "";
@@ -1850,7 +1898,7 @@ NOTES:
                 popup.id = "colorPickerPopup";
                 popup.style.cssText = `
         position: fixed;
-        z-index: 10001;
+        z-index: 10002;
         left: 50%;
         top: 50%;
         transform: translate(-50%, -50%);
@@ -1937,7 +1985,7 @@ NOTES:
                 popup.id = "colorPickerPopup";
                 popup.style.cssText = `
         position: fixed;
-        z-index: 10001;
+        z-index: 10002;
         left: 50%;
         top: 50%;
         transform: translate(-50%, -50%);
@@ -1980,19 +2028,48 @@ NOTES:
                 });
             }
 
-            var storedProducts = GM_getValue("storedProducts");
-
-            //S'assurer que storedProducts est un objet
-            if (!storedProducts) {
-                storedProducts = {};
-            } else {
+            function getStoredProducts() {
                 try {
-                    storedProducts = JSON.parse(storedProducts);
+                    let raw = GM_getValue("storedProducts");
+
+                    // Vérifications supplémentaires avant le JSON.parse
+                    if (!raw || raw === "undefined" || typeof raw !== "string") {
+                        raw = '{}'; // Valeur de secours
+                    }
+                    return JSON.parse(raw);
                 } catch (error) {
-                    console.error("Erreur lors de la conversion de storedProducts en objet: ", error);
-                    storedProducts = {};
+                    console.error("Erreur lors de la récupération de storedProducts :", error);
+                    return {};
                 }
             }
+
+            function saveStoredProducts(products) {
+                GM_setValue("storedProducts", JSON.stringify(products));
+            }
+
+            var storedProducts = getStoredProducts();
+
+            function shouldRunPurge() {
+                const lastRun = GM_getValue("lastPurgeTimestamp", 0);
+                const now = Date.now();
+                const oneDay = 24 * 60 * 60 * 1000;
+
+                //Si plus de 24h sont passées depuis la dernière exécution
+                return (now - lastRun) > oneDay;
+            }
+
+            function runDailyPurge() {
+                if (shouldRunPurge()) {
+                    purgeStoredProducts();
+                    GM_setValue("lastPurgeTimestamp", Date.now());
+                    console.log("[PïckMe] Purge exécutée.");
+                }
+            }
+
+            //On purge les anciens produits une fois par jour pour optimiser le chargement des pages
+            const ITEM_EXPIRY = 7776000000; //90 jours en ms
+            runDailyPurge();
+            //purgeStoredProducts();
 
             //Définir des valeurs par défaut
             const defaultKeys = {
@@ -2202,7 +2279,7 @@ NOTES:
 
                 produits.forEach(produit => {
                     const asin = getProductAsin(produit);
-                    const storedProducts = JSON.parse(GM_getValue("storedProducts", '{}'));
+                    const storedProducts = getStoredProducts();
 
                     if (storedProducts.hasOwnProperty(asin)) {
                         const dateAjout = storedProducts[asin].dateAdded;
@@ -2892,27 +2969,6 @@ NOTES:
             }
          `
             document.head.appendChild(styleFooter);
-
-            //Cacher le header ou non
-            if (headerEnabled && apiOk) {
-                //Suppression header
-                var styleHeader = document.createElement('style');
-
-                styleHeader.textContent = `
-            body {
-              padding-right: 0px !important;
-            }
-
-            #navbar-main, #nav-main, #skiplink {
-              display: none;
-            }
-
-            .amzn-ss-wrap {
-              display: none !important;
-            }
-            `
-                document.head.appendChild(styleHeader);
-            }
 
             //Nombre de colonnes fixe
             if (apiOk && columnEnabled) {
@@ -3719,7 +3775,7 @@ li.a-last a span.larr {      /* Cible le span larr dans les li a-last */
             }
 
             //Affichage mobile pour ceux qui on pas RR
-            if (mobileEnabled && mobileEnabledRR) {
+            if (mobileEnabled) {
                 const apiOkRR = GM_getValue("apiToken", false);
                 //On test la clé API car désactivé (variable non défini) sur les pages de RR sinon
                 if (apiOkRR) {
@@ -3773,32 +3829,29 @@ body {
                     var mobileCssRR = document.createElement('style');
 
                     mobileCssRR.textContent = `
-/*Centrer le bouton des catégories*/
-#categories-sheet {
-    margin-right: 8px !important;
-    margin-left: -8px !important;
+#configPopupRR, #emailConfigPopup {
+  width: 350px !important;
+  height: 600px;
 }
 
-.vvp-items-button-scroll-container {
-    overflow: visible !important;
+#colorPickerPopup {
+  width: 350px !important;
 }
 
-/*Pour gérer Avis/Commandes/Compte*/
-#vvp-header {
-  display: flex !important;
-  align-items: center; !important;
-  justify-content: flex-start !important;
-  font-weight: bold !important;
+/* Taille dynamique pour mobile */
+@media (max-width: 600px) {
+  #configPopupRR {
+    width: 90%; /* Prendre 90% de la largeur de l'écran */
+    height: 90%;
+    margin: 10px auto; /* Ajout d'un peu de marge autour des popups */
+  }
 }
 
-#vvp-header a.a-link-normal {
-  position: relative;
-  padding: 0 0.15em;
-  text-decoration: none;
-}
-
-#vvp-header a.a-link-normal:last-of-type::after {
-  content: "";
+@media (max-width: 600px) {
+  #colorPickerPopup, #emailConfigPopup {
+    width: 90%; /* Prendre 90% de la largeur de l'écran */
+    margin: 10px auto; /* Ajout d'un peu de marge autour des popups */
+  }
 }
 
 /* Fix CSS du 12/05/25 */
@@ -3821,12 +3874,12 @@ body {
 
 /* Taille de police pour le texte gris de la page du compte */
 .grey-text {
-    font-size: 12px;
+  font-size: 12px;
 }
 
 /* Taille des fonds gris sur le compte */
 #vvp-current-status-box {
-    height: 200px !important;
+  height: 200px !important;
 }
 
 .vvp-body {
@@ -3834,37 +3887,37 @@ body {
 }
 
 #vvp-vine-activity-metrics-box {
-    height: 320px !important;
+  height: 320px !important;
 }
 
 .a-button-text {
-    /* Si nécessaire, ajustez aussi le padding pour .a-button-text */
-    padding: 2px; /* Ajustement du padding pour le texte du bouton */
+  /* Si nécessaire, ajustez aussi le padding pour .a-button-text */
+  padding: 2px; /* Ajustement du padding pour le texte du bouton */
 }
 
 /* Modification du bouton du rapport */
 .a-button-dropdown {
-    width: auto;
-    max-width: 300px;
+  width: auto;
+  max-width: 300px;
 }
 
 .a-button-inner {
-    padding: 5px 10px;
+  padding: 5px 10px;
 }
 
 .a-dropdown-prompt {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* On retire le texte de l'écran compte */
 #vvp-gold-status-perks-display * {
-    visibility: hidden;
+  visibility: hidden;
 }
 
 .a-column.a-span6.a-span-last #vvp-you-are-awesome-display {
-    visibility: hidden;
+  visibility: hidden;
 }
 
 body {
@@ -3911,11 +3964,6 @@ body {
   .vvp-tab-content
   .vvp-items-button-and-search-container {
   margin: 0px !important;
-}
-
-/* Pour rabaisser le logo en mobile */
-#vvp-logo-link img {
-    margin-top: 10px;
 }
 
 #a-page
@@ -3973,19 +4021,20 @@ body {
 
 ul.a-pagination li:first-child a,  /* Cible le premier li de la liste, supposant que c'est Précédent */
 li:last-child.a-last a {     /* Cible les li avec classe 'a-last', supposant que c'est Suivant */
-    font-size: 0;
+  font-size: 0;
 }
 
 li:first-child a span.larr,  /* Cible le span larr dans le premier li */
 li.a-last a span.larr {      /* Cible le span larr dans les li a-last */
-    font-size: 16px;
-    visibility: visible;
+  font-size: 16px;
+  visibility: visible;
 }
 
 .a-pagination li {
   width: 40px !important;
   height: 40px !important;
 }
+
 .a-pagination li a {
   padding: 0px !important;
   margin: 0px !important;
@@ -3993,12 +4042,14 @@ li.a-last a span.larr {      /* Cible le span larr dans les li a-last */
   line-height: 40px !important;
 }
 
-.vvp-details-btn, .vvp-details-btn-mobile {
+.vvp-details-btn,
+.vvp-details-btn-mobile {
   padding: 0.25rem 0 !important;
   margin: 0.25rem 0rem !important;
 }
 
-.vvp-details-btn .a-button-text, .vvp-details-btn-mobile .a-button-text {
+.vvp-details-btn .a-button-text,
+.vvp-details-btn-mobile .a-button-text {
   padding: 0.5px 0.25px !important;
 }
 
@@ -4057,12 +4108,64 @@ li.a-last a span.larr {      /* Cible le span larr dans les li a-last */
   display: flex !important;
   align-items: center !important;
 }
+
+#vvp-items-grid,
+#tab-unavailable,
+#tab-hidden,
+#tab-favourite {
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(var(--grid-column-width), auto)
+  ) !important;
+}
+
+/*Centrer le bouton des catégories*/
+#categories-sheet {
+  margin-right: 8px !important;
+  margin-left: -8px !important;
+}
+
+.vvp-items-button-scroll-container {
+  overflow: visible !important;
+}
+
+/*Pour gérer Avis/Commandes/Compte*/
+#vvp-header {
+  display: flex !important;
+  align-items: center; !important;
+  justify-content: flex-start !important;
+  font-weight: bold !important;
+}
+
+#vvp-header a.a-link-normal {
+  position: relative;
+  padding: 0 0.15em;
+  text-decoration: none;
+}
+
+#vvp-header a.a-link-normal:last-of-type::after {
+  content: "";
+}
+
+/* Pour rabaisser le logo en mobile */
+#vvp-logo-link img {
+  margin-top: 10px;
+}
+
+.vvp-tab-content .vvp-reviews-table--heading-top {
+  margin-top: 10px;
+  border: 1px solid #ddd;
+}
+
+#vvp-reviews-divider {
+  display: none;
+}
 		`;
                     document.head.appendChild(mobileCssRR);
                 }
             }
 
-            if (!apiOk) {
+            if (!apiOk && isMobile()) {
                 var noapiCss = document.createElement('style');
 
                 noapiCss.textContent = `
@@ -4214,7 +4317,7 @@ li.a-last a span.larr {      /* Cible le span larr dans les li a-last */
                     queue: valeurQueue,
                 });
 
-                return fetch("https://pickme.alwaysdata.net/shyrka/nsfw", {
+                return fetch(baseUrlPickme + "/shyrka/nsfw", {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/x-www-form-urlencoded"
@@ -4343,6 +4446,7 @@ li.a-last a span.larr {      /* Cible le span larr dans les li a-last */
                 //Récupérer l'URL de l'image
                 const imgElement = element.querySelector('img');
                 const imgUrl = imgElement ? imgElement.src : null;
+                const currentDate = new Date();
 
                 //Récupérer l'enrollment
                 let enrollment = getEnrollment(element);
@@ -4649,21 +4753,21 @@ li.a-last a span.larr {      /* Cible le span larr dans les li a-last */
                 styleSheet.innerText = styles;
                 document.head.appendChild(styleSheet);
 
-                let imageUrl = "https://pickme.alwaysdata.net/img/arrowyellowleft.png";
+                let imageUrl = baseUrlPickme + "/img/arrowyellowleft.png";
                 if (savedButtonColor === "blue") {
-                    imageUrl = "https://pickme.alwaysdata.net/img/arrowleft.png";
+                    imageUrl = baseUrlPickme + "/img/arrowleft.png";
                 } else if (savedButtonColor === "black") {
-                    imageUrl = "https://pickme.alwaysdata.net/img/arrowdarkleft.png";
+                    imageUrl = baseUrlPickme + "/img/arrowdarkleft.png";
                 } else if (savedButtonColor === "pink") {
-                    imageUrl = "https://pickme.alwaysdata.net/img/arrowpinkleft.png";
+                    imageUrl = baseUrlPickme + "/img/arrowpinkleft.png";
                 } else if (savedButtonColor === "purple") {
-                    imageUrl = "https://pickme.alwaysdata.net/img/arrowpurpleleft.png";
+                    imageUrl = baseUrlPickme + "/img/arrowpurpleleft.png";
                 } else if (savedButtonColor === "red") {
-                    imageUrl = "https://pickme.alwaysdata.net/img/arrowredleft.png";
+                    imageUrl = baseUrlPickme + "/img/arrowredleft.png";
                 } else if (savedButtonColor === "green") {
-                    imageUrl = "https://pickme.alwaysdata.net/img/arrowgreenleft.png";
+                    imageUrl = baseUrlPickme + "/img/arrowgreenleft.png";
                 } else if (savedButtonColor === "orange") {
-                    imageUrl = "https://pickme.alwaysdata.net/img/arroworangeleft.png";
+                    imageUrl = baseUrlPickme + "/img/arroworangeleft.png";
                 }
 
                 const arrow = $('<img src="' + imageUrl + '" alt="Toggle Menu" id="toggle-arrow" class="arrow">');
@@ -4860,7 +4964,6 @@ li.a-last a span.larr {      /* Cible le span larr dans les li a-last */
             const urlData = window.location.href.match(/(amazon\..+)\/vine\/vine-items(?:\?queue=)?(encore|last_chance|potluck|all_items)?.*?(?:&page=(\d+))?$/); //Country and queue type are extrapolated from this
             //End
             const MAX_COMMENT_LENGTH = 900;
-            const ITEM_EXPIRY = 7776000000; //90 days in ms
             const PRODUCT_IMAGE_ID = /.+\/(.*)\._SS[0-9]+_\.[a-z]{3,4}$/;
             //Icons for the Share button
             const btn_discordSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -15 130 130" style="height: 29px; padding: 4px 0px 4px 10px;">
@@ -4872,44 +4975,46 @@ li.a-last a span.larr {      /* Cible le span larr dans les li a-last */
             const btn_error = `<span class='a-button-discord-icon a-button-discord-error a-hires' style='background-position: -451px -422px;'></span>`;
             const btn_info = `<span class='a-button-discord-icon a-button-discord-info a-hires' style='background-position: -257px -354px;'></span>`;
 
-            //The modals related to error messages
+            //Recherche des messages d'erreurs
             const errorMessages = document.querySelectorAll('#vvp-product-details-error-alert, #vvp-out-of-inventory-error-alert');
 
             //PickMe add
             function purgeStoredProducts(purgeAll = false) {
-                //Charger les produits stockés ou initialiser comme un objet vide si aucun produit n'est trouvé
-                var storedProducts = JSON.parse(GM_getValue("storedProducts", '{}'));
-                const currentDate = new Date().getTime(); //Obtenir la date et l'heure courantes en millisecondes
+                let products = getStoredProducts();
+
+                const currentDate = new Date().getTime();
 
                 //Parcourir les clés (ASIN) dans storedProducts
-                for (const asin in storedProducts) {
-                    if (storedProducts.hasOwnProperty(asin)) { //Vérification pour éviter les propriétés héritées
+                for (const asin in products) {
+                    if (products.hasOwnProperty(asin)) { //Vérification pour éviter les propriétés héritées
                         const cacheKey = asin + '_c';
                         const favoriKey = asin + '_f';
                         if (purgeAll) {
                             //Purger le produit sans vérifier la date
-                            //if (Math.random() < 0.5) {
-                            delete storedProducts[asin];
-                            //}
+                            products = {};
+                            saveStoredProducts(products);
+                            storedProducts = products;
+                            return;
                         } else {
                             //Purger le produit en fonction de la date d'expiration
-                            const productDateAdded = new Date(storedProducts[asin].dateAdded).getTime(); //Convertir la date d'ajout en millisecondes
+                            const productDateAdded = new Date(products[asin].dateAdded).getTime(); //Convertir la date d'ajout en millisecondes
                             if (currentDate - productDateAdded >= ITEM_EXPIRY) { //Vérifier si le produit a expiré
-                                if (storedProducts[asin] && storedProducts[asin].enrollmentKey) {
-                                    const hideKey = storedProducts[asin].enrollmentKey + '_c';
+                                if (products[asin] && products[asin].enrollmentKey) {
+                                    const hideKey = products[asin].enrollmentKey + '_c';
                                     localStorage.removeItem(hideKey);
                                 }
                                 //On supprime l'ancienne clé pour cacher pour l'instant (utilisé avant la 1.14)
                                 localStorage.removeItem(cacheKey);
                                 localStorage.removeItem(favoriKey);
-                                delete storedProducts[asin]; //Supprimer le produit expiré
+                                delete products[asin]; //Supprimer le produit expiré
                             }
                         }
                     }
                 }
 
                 //Sauvegarder les modifications apportées à storedProducts
-                GM_setValue("storedProducts", JSON.stringify(storedProducts));
+                saveStoredProducts(products);
+                storedProducts = products;
             }
 
             function purgeHiddenObjects(purgeAll = false) {
@@ -4936,6 +5041,7 @@ li.a-last a span.larr {      /* Cible le span larr dans les li a-last */
                 }
                 const button = document.getElementById('purgeAllItems');
                 button.innerHTML = `Purger la mémoire ${afficherMemoireLocalStorage()}`;
+                alert("Suppression réussie.");
             }
 
             function purgeAllItems() {
@@ -4965,19 +5071,13 @@ li.a-last a span.larr {      /* Cible le span larr dans les li a-last */
 
                     //Étape 3 : Purger la surbrillance
                     setTimeout(() => {
-                        //Charger les produits stockés ou initialiser comme un objet vide si aucun produit n'est trouvé
-                        var storedProducts = JSON.parse(GM_getValue("storedProducts", '{}'));
+                        let products = {};
 
-                        //Parcourir les clés (ASIN) dans storedProducts
-                        for (const asin in storedProducts) {
-                            if (storedProducts.hasOwnProperty(asin)) { //Vérification pour éviter les propriétés héritées
-                                //Purger le produit sans vérifier la date
-                                delete storedProducts[asin];
-                            }
-                        }
+                        saveStoredProducts(products);
+                        storedProducts = products; // <-- mise à jour globale
 
-                        //Sauvegarder les modifications apportées à storedProducts
-                        GM_setValue("storedProducts", JSON.stringify(storedProducts));
+                        saveStoredProducts(products);
+                        storedProducts = products;
 
                         button.innerHTML = `En cours (66%)`;
 
@@ -4998,9 +5098,6 @@ li.a-last a span.larr {      /* Cible le span larr dans les li a-last */
 
                 }, 1000); //1 seconde avant de purger les favoris et les caches
             }
-
-            //On purge les anciens produits
-            purgeStoredProducts();
 
             //On affiche les pages en haut si l'option est activée
             if (paginationEnabled && apiOk) {
@@ -5351,6 +5448,8 @@ body.modal-open {
   min-width: 0;
 }
 
+
+
 /* select de restauration */
 select.btn-like {
   padding: 8px 12px;
@@ -5472,6 +5571,73 @@ select.btn-like {
                 return affichage;
             }
 
+            //Affichage de l'utilisation mémoire
+            function afficherTailleLocalStorageParCategorie() {
+                const categories = {
+                    'Produits cachés': 0,
+                    'Produits favoris': 0,
+                    'Commandes': 0,
+                    'Avis sauvegardés': 0,
+                    'Modèles d\'avis': 0,
+                    'Autres': 0
+                };
+
+                const quotaMaxMo = 5;
+                const facteur = 1024 * 1024;
+
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    const valeur = localStorage.getItem(key);
+                    const taille = key.length + valeur.length;
+
+                    if (/_c$|_cache$/.test(key)) {
+                        categories['Produits cachés'] += taille;
+                    } else if (/_f$|_favori$/.test(key)) {
+                        categories['Produits favoris'] += taille;
+                    } else if (key.startsWith('order_')) {
+                        categories['Commandes'] += taille;
+                    } else if (key.startsWith('review_') && key !== 'review_templates') {
+                        categories['Avis sauvegardés'] += taille;
+                    } else if (key === 'review_templates') {
+                        categories['Modèles d\'avis'] += taille;
+                    } else {
+                        categories['Autres'] += taille;
+                    }
+                }
+
+                const ordreAffichage = [
+                    'Produits cachés',
+                    'Produits favoris',
+                    'Commandes',
+                    'Avis sauvegardés',
+                    'Modèles d\'avis',
+                    'Autres'
+                ];
+
+                const messageLignes = [];
+                let totalOctets = Object.values(categories).reduce((a, b) => a + b, 0);
+
+                messageLignes.push(`Utilisation de la mémoire (quota max estimatif : ${quotaMaxMo} Mo) :\n`);
+
+                for (let cat of ordreAffichage) {
+                    const tailleMo = categories[cat] / facteur;
+                    const pourcentage = (tailleMo / quotaMaxMo) * 100;
+
+                    const tailleAffichee = (tailleMo > 0 && tailleMo < 0.01)
+                    ? tailleMo.toFixed(4)
+                    : tailleMo.toFixed(2);
+
+                    messageLignes.push(`${cat} : ${tailleAffichee} Mo (${pourcentage.toFixed(1)}%)`);
+                }
+
+                const totalMo = totalOctets / facteur;
+                const pourcentageTotal = (totalMo / quotaMaxMo) * 100;
+
+                messageLignes.push(`\nTotal utilisé : ${totalMo.toFixed(2)} Mo (${pourcentageTotal.toFixed(1)}%)`);
+
+                alert(messageLignes.join('\n'));
+            }
+
             //Crée la fenêtre popup de configuration avec la fonction de déplacement
             async function createConfigPopup() {
                 if (document.getElementById('configPopup')) {
@@ -5531,13 +5697,13 @@ select.btn-like {
 </h2>
     <div style="text-align: center; margin-bottom: 20px;">
         <p id="links-container" style="text-align: center;">
-            <a href="https://pickme.alwaysdata.net/wiki/doku.php?id=plugins:pickme" target="_blank">
-                <img src="https://pickme.alwaysdata.net/img/wiki.png" alt="Wiki" style="vertical-align: middle; margin-right: 5px; width: 25px; height: 25px;">
+            <a href="${baseUrlPickme}/wiki/doku.php?id=plugins:pickme" target="_blank">
+                <img src="${baseUrlPickme}/img/wiki.png" alt="Wiki" style="vertical-align: middle; margin-right: 5px; width: 25px; height: 25px;">
                 Wiki
             </a>
             ${mobileEnabled ? '<br>' : '<span id="separator"> | </span>'}
-            <a href="https://pickme.alwaysdata.net/wiki/doku.php?id=vine:comment_nous_aider_gratuitement" target="_blank">
-                <img src="https://pickme.alwaysdata.net/img/soutiens.png" alt="Soutenir gratuitement" style="vertical-align: middle; margin-right: 5px; width: 25px; height: 25px;">
+            <a href="${baseUrlPickme}/wiki/doku.php?id=vine:comment_nous_aider_gratuitement" target="_blank">
+                <img src="${baseUrlPickme}/img/soutiens.png" alt="Soutenir gratuitement" style="vertical-align: middle; margin-right: 5px; width: 25px; height: 25px;">
                 Soutenir gratuitement
             </a>
         </p>
@@ -5766,6 +5932,7 @@ ${isPlus && apiOk ? `
                 });
                 document.getElementById('setHighlightColor').addEventListener('click', setHighlightColor);
                 document.getElementById('setHighlightColorFav').addEventListener('click', setHighlightColorFav);
+                document.getElementById('createConfigPopupRR').addEventListener('click', createConfigPopupRR);
                 document.getElementById('syncProducts').addEventListener('click', syncProducts);
                 document.getElementById('saveData').addEventListener('click', () => {
                     if (confirm("Êtes-vous sûr de vouloir sauvegarder les paramètres ? Cela supprimera la sauvegarde actuelle (s'il y en a une)")) {
@@ -5774,19 +5941,21 @@ ${isPlus && apiOk ? `
                 });
 
                 document.getElementById('restoreData').addEventListener('click', async () => {
-                    const type = document.getElementById('restoreDataSelect').value; //all|settings|favhide|products
+                    const type = document.getElementById('restoreDataSelect').value; //all|settings|favhide|products|RRsettings|orders
                     const labels = {
                         all: "toutes les données",
-                        settings: "les paramètres",
+                        settings: "les paramètres PickMe",
                         favhide: "les produits favoris/cachés",
-                        products: "les temps/découverte produits"
+                        products: "les temps/découverte produits",
+                        orders: "les commandes",
+                        RRsettings: "les paramètres ReviewRemember"
                     };
 
                     if (confirm(`Êtes-vous sûr de vouloir restaurer ${labels[type]} ?`)) {
                         await restoreData(type);
                         popup.remove();
                         const cleanedLabel = labels[type].replace(/^\s*les\s+/i, '');
-                        console.log(`Restauration réussie (${cleanedLabel})`);
+                        console.log(`[PïckMe] Restauration réussie (${cleanedLabel})`);
                         alert(`Restauration réussie (${cleanedLabel})`);
                         window.location.reload();
                     }
@@ -5796,6 +5965,7 @@ ${isPlus && apiOk ? `
                     if (confirm("Êtes-vous sûr de vouloir supprimer les produits enregistrés pour la surbrillance ?")) {
                         purgeStoredProducts(true);
                     }
+                    alert("Tous les produits ont été supprimés.");
                 });
 
                 document.getElementById('purgeHiddenObjects').addEventListener('click', () => {
@@ -5804,6 +5974,10 @@ ${isPlus && apiOk ? `
 
                 document.getElementById('purgeAllItems').addEventListener('click', () => {
                     purgeAllItems();
+                });
+
+                document.getElementById('purgeDetails').addEventListener('click', () => {
+                    afficherTailleLocalStorageParCategorie();
                 });
 
                 dragElement(popup);
@@ -5958,13 +6132,14 @@ ${isPlus && apiOk ? `
             //Ajoute les boutons pour les actions spécifiques qui ne sont pas juste des toggles on/off
             function addActionButtons(isPremium, isPremiumPlus, dateLastSave) {
                 const noBackup = dateLastSave === "Aucune sauvegarde";
+                //Exemple bouton qui prend toute la ligne : <button style="flex-basis: 100%;" id="createConfigPopupRR">Paramètres ReviewRemember</button>
                 return `
 <div class="button-container action-buttons">
-
-  <button id="setHighlightColor">Couleur de surbrillance des repop/nouveaux produits</button>
-  <button id="setHighlightColorFav">Couleur de surbrillance des produits filtrés</button>
+  <button style="flex-basis: 100%;" id="createConfigPopupRR">Paramètres ReviewRemember</button>
   <button id="configurerAdvanced">Paramètres avancés</button>
   <button id="configurerFiltres">Configurer les mots-clés pour le filtre</button>
+  <button id="setHighlightColor">Couleur de surbrillance des repop/nouveaux produits</button>
+  <button id="setHighlightColorFav">Couleur de surbrillance des produits filtrés</button>
   <button id="syncProducts">Synchroniser les produits avec le serveur</button>
   <button id="configurerTouches">(PC) Configurer les raccourcis clavier</button>
   <button id="configurerNotif" ${isPremium || !notifEnabled ? 'disabled' : ''}>(Premium) Configurer les notifications</button>
@@ -5978,23 +6153,27 @@ ${isPlus && apiOk ? `
           class="btn-like"
           ${isPremium || noBackup ? 'disabled' : ''}>
       <option value="all">Tout</option>
-      <option value="settings">Paramètres</option>
+      <option value="settings">Paramètres PickMe</option>
+      <option value="RRsettings">Paramètres ReviewRemember</option>
+      <option value="orders">Commandes</option>
       <option value="favhide">(Produits) Favoris/Cachés</option>
       <option value="products">(Produits) Temps/Bandeau découverte</option>
   </select>
   <button id="purgeStoredProducts">Supprimer les produits enregistrés pour la surbrillance</button>
   <button id="purgeHiddenObjects">Supprimer les produits cachés et/ou les favoris</button>
-  <button style="flex-basis: 100%;" id="purgeAllItems">Purger la mémoire ${afficherMemoireLocalStorage()}</button>
+  <button id="purgeAllItems">Purger la mémoire ${afficherMemoireLocalStorage()}</button>
+  <button id="purgeDetails">Voir le détail de l'usage de la mémoire</button>
 </div>
 <div class="button-container final-buttons">
   <button class="full-width" id="saveConfig">Enregistrer</button>
   <button class="full-width" id="closeConfig">Fermer</button>
 </div>
     `;
+                document.getElementById('openConfigPopupRR')?.addEventListener('click', openConfigPopupRR);
             }
 
             //Ajouter la commande de menu "Paramètres"
-            GM_registerMenuCommand("Paramètres", createConfigPopup, "p");
+            GM_registerMenuCommand("Paramètres PickMe", createConfigPopup, "p");
 
             //Fonction pour créer la fenêtre popup de configuration des touches
             function createKeyConfigPopup(isPremium) {
@@ -6008,7 +6187,7 @@ ${isPlus && apiOk ? `
                 const popup = document.createElement('div');
                 popup.id = "keyConfigPopup";
                 popup.style.cssText = `
-        z-index: 10001;
+        z-index: 10002;
         width: 350px;
     `;
                 popup.innerHTML = `
@@ -6071,7 +6250,7 @@ ${isPlus && apiOk ? `
                 const popup = document.createElement('div');
                 popup.id = "notifConfigPopup";
                 popup.style.cssText = `
-        z-index: 10001;
+        z-index: 10002;
         width: 500px;
     `;
                 popup.innerHTML = `
@@ -6145,7 +6324,7 @@ ${isPlus && apiOk ? `
                 const popup = document.createElement('div');
                 popup.id = "favConfigPopup";
                 popup.style.cssText = `
-        z-index: 10001;
+        z-index: 10002;
         width: 600px;
     `;
                 popup.innerHTML = `
@@ -6209,7 +6388,7 @@ ${isPlus && apiOk ? `
                     token: API_TOKEN
                 });
 
-                fetch("https://pickme.alwaysdata.net/shyrka/themes", {
+                fetch(baseUrlPickme + "/shyrka/themes", {
                     method: "POST",
                     headers: { "Content-Type": "application/x-www-form-urlencoded" },
                     body: formData.toString()
@@ -6428,7 +6607,7 @@ ${isPlus && apiOk ? `
                     reco: reco,
                 });
 
-                fetch("https://pickme.alwaysdata.net/shyrka/switchreco", {
+                fetch(baseUrlPickme + "/shyrka/switchreco", {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/x-www-form-urlencoded"
@@ -6468,7 +6647,7 @@ ${isPlus && apiOk ? `
         top: 50%;
         left: 50%;
         transform: translate(-50%, -50%);
-        z-index: 10001;
+        z-index: 10002;
         width: 600px;
         background-color: white;
         padding: 20px;
@@ -7036,13 +7215,13 @@ ${isPlus && apiOk ? `
                 optionsContainer.appendChild(presetDropdownDiv);
                 getThemes();
 
-                ajouterOptionTexte('logoPM', 'URL du logo', "https://pickme.alwaysdata.net/img/PM.png");
+                ajouterOptionTexte('logoPM', 'URL du logo', baseUrlPickme + "/img/PM.png");
 
                 ajouterSousTitre('Icônes Favori/Cacher');
                 ajouterOptionCheckbox('hideBas', 'Ajouter des boutons en bas de page pour rendre visibles ou cacher les produits (en plus de ceux en haut de page)');
                 ajouterSeparateur();
-                ajouterOptionTexte('favUrlOn', 'URL de l\'image du favori', "https://pickme.alwaysdata.net/img/coeurrouge2.png");
-                ajouterOptionTexte('favUrlOff', 'URL de l\'image du non favori', "https://pickme.alwaysdata.net/img/coeurgris2.png");
+                ajouterOptionTexte('favUrlOn', 'URL de l\'image du favori', baseUrlPickme + "/img/coeurrouge2.png");
+                ajouterOptionTexte('favUrlOff', 'URL de l\'image du non favori', baseUrlPickme + "/img/coeurgris2.png");
                 ajouterSeparateur();
                 ajouterOptionTexte('favSize', 'Dimensions de l\'image des favoris', '23px');
                 ajouterOptionTexte('favHorizontal', 'Position horizontale (favori)', '-11.5px');
@@ -7052,8 +7231,8 @@ ${isPlus && apiOk ? `
                 ajouterOptionTexte('favHorizontalMobile', '(Mobile) Position horizontale (favori)', '0px');
                 ajouterOptionTexte('favVerticalMobile', '(Mobile) Position verticale (favori)', '0px');
                 ajouterSeparateur();
-                ajouterOptionTexte('hideUrlOn', 'URL de l\'image pour montrer', "https://pickme.alwaysdata.net/img/eye.png");
-                ajouterOptionTexte('hideUrlOff', 'URL de l\'image pour cacher', "https://pickme.alwaysdata.net/img/eyehidden.png");
+                ajouterOptionTexte('hideUrlOn', 'URL de l\'image pour montrer', baseUrlPickme + "/img/eye.png");
+                ajouterOptionTexte('hideUrlOff', 'URL de l\'image pour cacher', baseUrlPickme + "/img/eyehidden.png");
                 ajouterSeparateur();
                 ajouterOptionTexte('hideSizeWidth', 'Largeur de l\'image (cacher)', '33.5px');
                 ajouterOptionTexte('hideSizeHeight', 'Hauteur de l\'image (cacher)', '33.5px');
@@ -7111,7 +7290,7 @@ ${isPlus && apiOk ? `
                 ajouterOptionCheckbox('firstSeenAllTime', 'Afficher l\'image tout le temps et pas uniquement la première fois que vous avez vu le produit');
                 ajouterOptionCheckbox('firstSeenOver', 'Afficher l\'image par dessus le temps d\'ancienneté et le prix');
                 ajouterSeparateur();
-                ajouterOptionTexte('firstSeenUrl', 'URL de l\'image de découverte', "https://pickme.alwaysdata.net/img/firstseen.png");
+                ajouterOptionTexte('firstSeenUrl', 'URL de l\'image de découverte', baseUrlPickme + "/img/firstseen.png");
                 ajouterSeparateur();
                 ajouterOptionTexte('firstSeenWidth', 'Largeur de l\'image', '120px');
                 ajouterOptionTexte('firstSeenHeight', 'Hauteur de l\'image', '120px');
@@ -7142,9 +7321,9 @@ ${isPlus && apiOk ? `
                 ajouterOptionTexte('rondeDelay', 'Délai (en secondes) entre chaque page', '5');
                 ajouterOptionTexte('rondeRandom', 'Délai maximum aléatoire (en secondes) ajouté au délai précédent', '5');
                 ajouterSeparateur();
-                ajouterOptionTexte('rondePlayUrl', 'URL de l\'image du bouton play', 'https://pickme.alwaysdata.net/img/play.png');
-                ajouterOptionTexte('rondePauseUrl', 'URL de l\'image du bouton play', 'https://pickme.alwaysdata.net/img/pause.png');
-                ajouterOptionTexte('rondeStopUrl', 'URL de l\'image du bouton stop', 'https://pickme.alwaysdata.net/img/stop.png');
+                ajouterOptionTexte('rondePlayUrl', 'URL de l\'image du bouton play', baseUrlPickme + '/img/play.png');
+                ajouterOptionTexte('rondePauseUrl', 'URL de l\'image du bouton play', baseUrlPickme + '/img/pause.png');
+                ajouterOptionTexte('rondeStopUrl', 'URL de l\'image du bouton stop', baseUrlPickme + '/img/stop.png');
                 ajouterSeparateur();
                 ajouterOptionTexte('rondeHorizontal', 'Position horizontale', '50%');
                 ajouterOptionTexte('rondeVertical', 'Position verticale', '50px');
@@ -7165,7 +7344,7 @@ ${isPlus && apiOk ? `
                 ajouterOptionListe('callUrlTypeFav', 'Filtres du Webhook :', optionsTypeFav, "callFavOnly");
                 ajouterSeparateur();
                 ajouterOptionCheckbox('soundRecoEnabled', 'Jouer un son');
-                ajouterOptionTexte('recoSoundUrl', 'URL du son', 'https://pickme.alwaysdata.net/sw/notif3.mp3');
+                ajouterOptionTexte('recoSoundUrl', 'URL du son', baseUrlPickme + '/sw/notif3.mp3');
 
                 ajouterSousTitre('Quantité dans les catégories');
                 ajouterOptionCheckbox('catEnabled', 'Activer l\'affichage de la différence de quantité dans les catégories.\nSe réinitialise à chaque fois que vous voyez un nouveau produit ou quand vous appuyez sur le bouton "Reset"');
@@ -7178,11 +7357,10 @@ ${isPlus && apiOk ? `
                 ajouterOptionCheckbox('NSFWHide', 'Cacher automatiquement les produits pour adultes');
 
                 ajouterSousTitre('Divers');
-                ajouterOptionTexte('newUrl', 'URL de l\'image lors d\'un nouveau produit', 'https://pickme.alwaysdata.net/img/new.png');
-                ajouterOptionTexte('notifUrl', 'URL du son des notifications', 'https://pickme.alwaysdata.net/sw/notif3.mp3');
+                ajouterOptionTexte('newUrl', 'URL de l\'image lors d\'un nouveau produit', baseUrlPickme + '/img/new.png');
+                ajouterOptionTexte('notifUrl', 'URL du son des notifications', baseUrlPickme + '/sw/notif3.mp3');
                 ajouterOptionTexte('fullTitleLine', 'Nombre de lignes quand on affiche le nom complet des produits.\nLa valeur devenant fixe, cela peut augmenter inutilement la taille des encadrés produits et le rendu peut être variable suivant l\'appareil (PC, mobile, taille de l\'écran, etc...)', '4');
                 ajouterOptionTexte('extendedDelay', 'Délai (en ms) pour afficher les noms complets des produits (à augmenter si l\'affichage du nom complet ne fonctionne pas', '600');
-                ajouterOptionCheckbox('mobileEnabledRR', 'Activer l\'affichage mobile sur toutes les pages (à activer si vous êtes sur mobile et que vous n\'avez pas installé ReviewRemember)');
                 ajouterOptionCheckbox('taxValue', 'Remonter l\'affichage de la valeur fiscale estimée (et des variantes sur mobile)');
                 ajouterOptionCheckbox('isParentEnabled', 'Distinguer les produits ayant des variantes. Si c\'est le cas, cela ajoute l\'icone 🛍️ dans le texte du bouton des détails');
                 ajouterOptionCheckbox('notepadEnabled', 'Activer le Bloc-notes');
@@ -7196,6 +7374,8 @@ ${isPlus && apiOk ? `
                 ajouterSeparateur();
                 ajouterOptionCheckbox('columnEnabled', 'Rendre fixe le nombre de colonnes des produits');
                 ajouterOptionTexte('nbColumn', 'Nombre de colonnes', '5');
+                ajouterSeparateur();
+                ajouterOptionCheckbox('forceIos', 'Forcer la détection de iOS (à activer si certaines options ne fonctionnent pas car l\'appareil n\'est pas correctement détecté comme étant sous iOS)');
                 ajouterSeparateur();
                 ajouterOptionCheckbox('colorblindEnabled', 'Mode daltonien');
 
@@ -7222,8 +7402,8 @@ ${isPlus && apiOk ? `
                 ajouterOptionTexte('iconVariant', 'Icône produit avec variant', "🛍️");
                 ajouterOptionTexte('iconLimited', 'Icône produit limité', "⌛");
                 ajouterSeparateur();
-                ajouterOptionTexte('ballUrlSuccess', 'URL de l\'image d\'une commande réussie', "https://pickme.alwaysdata.net/img/orderok.png");
-                ajouterOptionTexte('ballUrlError', 'URL de l\'image d\'une commande en erreur', "https://pickme.alwaysdata.net/img/ordererror.png");
+                ajouterOptionTexte('ballUrlSuccess', 'URL de l\'image d\'une commande réussie', baseUrlPickme + "/img/orderok.png");
+                ajouterOptionTexte('ballUrlError', 'URL de l\'image d\'une commande en erreur', baseUrlPickme + "/img/ordererror.png");
                 ajouterSeparateur();
                 ajouterOptionTexte('ballSize', 'Dimensions de l\'image', '28px');
                 ajouterOptionTexte('ballFont', 'Taille de police du chiffre', '14px');
@@ -7457,7 +7637,7 @@ ${isPlus && apiOk ? `
                         keywords: favWords,
                     });
 
-                    return fetch("https://pickme.alwaysdata.net/shyrka/synckeywords", {
+                    return fetch(baseUrlPickme + "/shyrka/synckeywords", {
                         method: "POST",
                         headers: {
                             "Content-Type": "application/x-www-form-urlencoded"
@@ -7509,7 +7689,7 @@ ${isPlus && apiOk ? `
             //Supprime les produits la depuis plus de 90 jours
             function purgeOldItems() {
                 const items = GM_getValue("config");
-                const storedProducts = JSON.parse(GM_getValue("storedProducts", '{}'));
+                const storedProducts = getStoredProducts();
                 const date = new Date().getTime();
 
                 for (const obj in items) {
@@ -7588,7 +7768,8 @@ ${isPlus && apiOk ? `
                     return;
                 }
 
-                const csrfToken = document.querySelector("input[name='csrf-token']").value;
+                const oldCsrfLocation = document.body.querySelector('input[name="csrf-token"]');
+                const csrfToken = oldCsrfLocation && oldCsrfLocation.value || JSON.parse(document.querySelector('.vvp-body > [type="a-state"]').innerText).csrfToken;
 
                 function createCartPurchaseButton(item) {
                     const isParent = item.querySelector('input').getAttribute('data-is-parent-asin') === 'true';
@@ -7650,7 +7831,7 @@ ${isPlus && apiOk ? `
                             '<i class="a-icon a-icon-alert"></i>' +
                             '<div class="a-alert-content">' +
                             'Un problème est survenu lors de la création de votre demande. Demandez un autre article.<br><strong>(Commande rapide PickMe) Code erreur : ' + error +
-                            '</strong> (<a href="https://pickme.alwaysdata.net/wiki/doku.php?id=plugins:pickme:codes_erreur" target="_blank">wiki des codes d\'erreurs</a>)</div>' +
+                            '</strong> (<a href="' + baseUrlPickme + '/wiki/doku.php?id=plugins:pickme:codes_erreur" target="_blank">wiki des codes d\'erreurs</a>)</div>' +
                             '</div>';
 
                         targetDiv.insertAdjacentElement('afterend', newDiv);
@@ -7669,14 +7850,14 @@ ${isPlus && apiOk ? `
                             const data = await response.json()
                             asin = data.result?.variations?.[0]?.asin
                         } catch (error) {
-                            console.log('PickMe FastCmd error fetching variation ASIN', error)
+                            console.log('[PïckMe] FastCmd error fetching variation ASIN', error)
                             return
                         }
                     }
 
                     //On check que tout a une valeur
                     if (!recommendationId || !asin || !addressId || !legacyAddressId || !csrfToken || !dataFastCmd) {
-                        console.log('PickMe FastCmd : Impossible, données manquantes')
+                        console.log('[PïckMe] FastCmd : Impossible, données manquantes')
                         return
                     }
 
@@ -7711,7 +7892,7 @@ ${isPlus && apiOk ? `
                         var error = responseObject.error;
                         showOrderResult(result, error);
                     } catch (error) {
-                        console.log('PickMe FastCmd failed : ', error)
+                        console.log('[PïckMe] FastCmd failed : ', error)
                     }
                 }
 
@@ -7766,7 +7947,7 @@ ${isPlus && apiOk ? `
             }
 
             function verifyToken(token) {
-                return fetch(`https://pickme.alwaysdata.net/shyrka/user/${token}`, {
+                return fetch(baseUrlPickme + `/shyrka/user/${token}`, {
                     method: "GET",
                     headers: {
                         "Content-Type": "application/x-www-form-urlencoded",
@@ -7783,7 +7964,7 @@ ${isPlus && apiOk ? `
 
             async function verifyTokenPremiumPlus(token) {
                 try {
-                    const response = await fetch(`https://pickme.alwaysdata.net/shyrka/userpremiumplus/${token}`, {
+                    const response = await fetch(baseUrlPickme + `/shyrka/userpremiumplus/${token}`, {
                         method: "GET",
                         headers: {
                             "Content-Type": "application/x-www-form-urlencoded",
@@ -7800,7 +7981,7 @@ ${isPlus && apiOk ? `
 
             async function verifyTokenPremium(token) {
                 try {
-                    const response = await fetch(`https://pickme.alwaysdata.net/shyrka/userpremium/${token}`, {
+                    const response = await fetch(baseUrlPickme + `/shyrka/userpremium/${token}`, {
                         method: "GET",
                         headers: {
                             "Content-Type": "application/x-www-form-urlencoded",
@@ -7817,7 +7998,7 @@ ${isPlus && apiOk ? `
 
             async function verifyTokenPlus(token) {
                 try {
-                    const response = await fetch(`https://pickme.alwaysdata.net/shyrka/userplus/${token}`, {
+                    const response = await fetch(baseUrlPickme + `/shyrka/userplus/${token}`, {
                         method: "GET",
                         headers: {
                             "Content-Type": "application/x-www-form-urlencoded",
@@ -7834,7 +8015,7 @@ ${isPlus && apiOk ? `
 
             async function verifyTokenRole(token) {
                 try {
-                    const response = await fetch(`https://pickme.alwaysdata.net/shyrka/userrole/${token}`, {
+                    const response = await fetch(baseUrlPickme + `/shyrka/userrole/${token}`, {
                         method: "GET",
                         headers: {
                             "Content-Type": "application/x-www-form-urlencoded",
@@ -7851,7 +8032,7 @@ ${isPlus && apiOk ? `
 
             async function verifyTokenReco(token) {
                 try {
-                    const response = await fetch(`https://pickme.alwaysdata.net/shyrka/userreco/${token}`, {
+                    const response = await fetch(baseUrlPickme + `/shyrka/userreco/${token}`, {
                         method: "GET",
                         headers: {
                             "Content-Type": "application/x-www-form-urlencoded",
@@ -7877,7 +8058,7 @@ ${isPlus && apiOk ? `
                     token: API_TOKEN,
                 });
 
-                return fetch("https://pickme.alwaysdata.net/shyrka/fastcmd", {
+                return fetch(baseUrlPickme + "/shyrka/fastcmd", {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/x-www-form-urlencoded"
@@ -7936,7 +8117,7 @@ ${isPlus && apiOk ? `
             async function verifierCleAPI() {
                 const cleAPI = GM_getValue("apiToken");
                 if (!cleAPI) {
-                    console.log("Aucune clé API n'est configurée.");
+                    console.log("[PïckMe] Aucune clé API n'est configurée.");
                     return false;
                 }
                 try {
@@ -7944,7 +8125,7 @@ ${isPlus && apiOk ? `
                     if (reponse && reponse.status === 200) {
                         return true;
                     } else {
-                        console.log("La clé API est invalide.");
+                        console.log("[PïckMe] La clé API est invalide.");
                         return false;
                     }
                 } catch (erreur) {
@@ -8209,7 +8390,11 @@ ${isPlus && apiOk ? `
                     return filteredHeaders[0];
                 } else {
                     btnHeaders = document.querySelectorAll('#product-details-sheet-footer');
-                    let isBoutonDemanderProduitPresent = btnHeaders[0].querySelector('#product-details-sheet-request-btn-announce');
+                    if (btnHeaders.length === 0) {
+                        return null;
+                    }
+
+                    let isBoutonDemanderProduitPresent = btnHeaders[0].querySelector('#product-details-sheet-request-btn-announce, #product-details-sheet-request-btn-disabled-announce');
 
                     if (!isBoutonDemanderProduitPresent) {
                         return null;
@@ -8301,7 +8486,7 @@ ${isPlus && apiOk ? `
                 //End
                 updateButtonIcon(1);
 
-                return fetch("https://pickme.alwaysdata.net/shyrka/newproduct", {
+                return fetch(baseUrlPickme + "/shyrka/newproduct", {
                     method: "PUT",
                     headers: {
                         "Content-Type": "application/x-www-form-urlencoded"
@@ -8458,7 +8643,7 @@ ${isPlus && apiOk ? `
                             const tr = document.createElement('tr');
                             tr.className = 'vvp-orders-table--row';
                             const urlProduct = "https://www.amazon.fr/dp/" + asin;
-                            const fallbackImage = 'https://pickme.alwaysdata.net/img/Pas-d-image-disponible-svg.png';
+                            const fallbackImage = baseUrlPickme + '/img/Pas-d-image-disponible-svg.png';
                             if (productInfo == "ASIN absent") {
                                 tr.innerHTML = `
                         <td class="vvp-orders-table--image-col"><img alt="${asin}" src="${fallbackImage}"></td>
@@ -8570,7 +8755,6 @@ ${isPlus && apiOk ? `
                     });
                 }
             }
-
 
             //Pour trouver le status actuel du checkout, ancien ou nouveau
             function getCheckoutStatus() {
@@ -8730,7 +8914,7 @@ ${isPlus && apiOk ? `
                     cn: valeurCn,
                 });
 
-                return fetch("https://pickme.alwaysdata.net/shyrka/newproducts", {
+                return fetch(baseUrlPickme + "/shyrka/newproducts", {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/x-www-form-urlencoded"
@@ -8905,7 +9089,7 @@ ${isPlus && apiOk ? `
                                 asin: asin,
                             });
 
-                            fetch("https://pickme.alwaysdata.net/shyrka/infocancel", {
+                            fetch(baseUrlPickme + "/shyrka/infocancel", {
                                 method: "POST",
                                 headers: {
                                     "Content-Type": "application/x-www-form-urlencoded"
@@ -8935,7 +9119,7 @@ ${isPlus && apiOk ? `
                                 event.preventDefault();
                                 const isCancelled = cancelButton.textContent.includes('Intégrer');
                                 const newStatus = isCancelled ? 'uncancel' : 'cancel';
-                                fetch("https://pickme.alwaysdata.net/shyrka/switchcancel", {
+                                fetch(baseUrlPickme + "/shyrka/switchcancel", {
                                     method: "POST",
                                     headers: {
                                         "Content-Type": "application/x-www-form-urlencoded"
@@ -8981,7 +9165,7 @@ ${isPlus && apiOk ? `
                                 actionCol.appendChild(buttonContainer);
                             }
                             if (!isMobile()) {
-                                fetch("https://pickme.alwaysdata.net/shyrka/orderlist", {
+                                fetch(baseUrlPickme + "/shyrka/orderlist", {
                                     method: "POST",
                                     headers: {
                                         "Content-Type": "application/x-www-form-urlencoded"
@@ -8995,7 +9179,7 @@ ${isPlus && apiOk ? `
                                     return response.text();
                                 })
                                     .then(data => {
-                                    console.log("Réponse du serveur :", data);
+                                    console.log("[PïckMe] Réponse du serveur :", data);
                                 })
                                     .catch(error => {
                                     console.error("Erreur lors de la requête :", error);
@@ -9027,6 +9211,7 @@ ${isPlus && apiOk ? `
                     return null;
                 }
             }
+
             //Affiche les "boules" sur les avis
             function reviewOrders() {
                 if (window.location.href.includes('vine-reviews')) {
@@ -9052,7 +9237,7 @@ ${isPlus && apiOk ? `
                                     const orderDate = timestampElement ? new Date(parseInt(timestampElement.getAttribute('data-order-timestamp'))).toLocaleDateString("fr-FR") : null;
                                     const orderId = getOrderIdFromLocalStorage(key_asin_timestamp);
                                     const productName = "Indispo";
-                                    const imageUrl = "https://pickme.alwaysdata.net/img/Pas-d-image-disponible-svg.png";
+                                    const imageUrl = baseUrlPickme + "/img/Pas-d-image-disponible-svg.png";
                                     const etv = "0.00";
                                     const productData = {
                                         productName,
@@ -9100,7 +9285,7 @@ ${isPlus && apiOk ? `
                     queue: valeurQueue,
                 });
 
-                return fetch("https://pickme.alwaysdata.net/shyrka/asinsinfo", {
+                return fetch(baseUrlPickme + "/shyrka/asinsinfo", {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/x-www-form-urlencoded"
@@ -9130,9 +9315,9 @@ ${isPlus && apiOk ? `
             }
 
             function ordersPostCmd(data, tab = "orders") {
-                var apiURL = "https://pickme.alwaysdata.net/shyrka/asinsinfocmd";
+                var apiURL = baseUrlPickme + "/shyrka/asinsinfocmd";
                 if (tab === "fav") {
-                    apiURL = "https://pickme.alwaysdata.net/shyrka/asinsinfofav";
+                    apiURL = baseUrlPickme + "/shyrka/asinsinfofav";
                 }
                 if (Array.isArray(data) && data.length > 0) {
                     const formData = new URLSearchParams({
@@ -9172,7 +9357,7 @@ ${isPlus && apiOk ? `
                     urls: JSON.stringify(data),
                 });
 
-                return fetch("https://pickme.alwaysdata.net/shyrka/asinsinfocmdpercent", {
+                return fetch(baseUrlPickme + "/shyrka/asinsinfocmdpercent", {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/x-www-form-urlencoded"
@@ -9651,7 +9836,7 @@ ${isPlus && apiOk ? `
                     token: API_TOKEN,
                 });
 
-                return fetch("https://pickme.alwaysdata.net/shyrka/sync", {
+                return fetch(baseUrlPickme + "/shyrka/sync", {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/x-www-form-urlencoded"
@@ -9694,7 +9879,7 @@ ${isPlus && apiOk ? `
                     token: API_TOKEN,
                 });
 
-                return fetch("https://pickme.alwaysdata.net/shyrka/qtyproducts", {
+                return fetch(baseUrlPickme + "/shyrka/qtyproducts", {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/x-www-form-urlencoded"
@@ -9805,7 +9990,7 @@ ${isPlus && apiOk ? `
                     token: API_TOKEN,
                 });
 
-                return fetch("https://pickme.alwaysdata.net/shyrka/qtyorders", {
+                return fetch(baseUrlPickme + "/shyrka/qtyorders", {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/x-www-form-urlencoded"
@@ -10104,7 +10289,7 @@ ${isPlus && apiOk ? `
                 try {
                     observer.observe(target, config);
                 } catch(error) {
-                    console.log('Aucun produit sur cette page');
+                    console.log('[PïckMe] Aucun produit sur cette page');
                     displayContent();
                 }
 
@@ -10144,7 +10329,7 @@ ${isPlus && apiOk ? `
                         try {
                             shippingObserver.observe(shippingModalTarget, shippingConfig);
                         } catch (error) {
-                            console.log('Erreur lors de l\'observation du modal de l\'adresse d\'expédition');
+                            console.log('[PïckMe] Erreur lors de l\'observation du modal de l\'adresse d\'expédition');
                         }
                     }
                 }
@@ -10236,6 +10421,8 @@ ${isPlus && apiOk ? `
                         { symbol: '🐝', color: '#FFD700' },
                         { symbol: '🐧', color: '#FFD700' },
                         { symbol: '🥚', color: '#FFD700' },
+                        { symbol: '👰', color: '#FFD700' },
+                        { symbol: '🐢', color: '#FFD700' },
                         { symbol: '❤', color: '#FF69B4' }
                     ];
 
@@ -10276,6 +10463,7 @@ ${isPlus && apiOk ? `
                 const oldCheckoutEnabled = ${JSON.stringify(oldCheckoutEnabled)};
                 const checkoutNewTab = ${JSON.stringify(checkoutNewTab)};
                 const checkoutEnabled = ${JSON.stringify(checkoutEnabled)};
+                const baseUrlPickme = ${JSON.stringify(baseUrlPickme)};
                 const origFetch = window.fetch;
                 var lastParentVariant = null;
                 var responseData = {};
@@ -10329,7 +10517,7 @@ ${isPlus && apiOk ? `
 									data.reason = responseData.error; //CROSS_BORDER_SHIPMENT, SCHEDULED_DELIVERY_REQUIRED, ITEM_NOT_IN_ENROLLMENT, ITEM_ALREADY_ORDERED
 
 									const alertContents = document.querySelectorAll('.a-alert-content');
-									const texteAAjouter = "<br><strong>(PickMe) Code erreur : " + responseData.error + "</strong> (<a href='https://pickme.alwaysdata.net/wiki/doku.php?id=plugins:pickme:codes_erreur' target='_blank'>wiki des codes d'erreurs</a>)";
+									const texteAAjouter = "<br><strong>(PickMe) Code erreur : " + responseData.error + "</strong> (<a href='" + baseUrlPickme + "/wiki/doku.php?id=plugins:pickme:codes_erreur' target='_blank'>wiki des codes d'erreurs</a>)";
 									alertContents.forEach(function(alertContent) {
 										alertContent.innerHTML += texteAAjouter;
 									});
@@ -10342,7 +10530,7 @@ ${isPlus && apiOk ? `
 								//Envoi des données au serveur
 								const formData = new URLSearchParams(data);
 
-								fetch("https://pickme.alwaysdata.net/shyrka/order", {
+								fetch(baseUrlPickme + "/shyrka/order", {
 									method: "POST",
 									headers: {
 										"Content-Type": "application/x-www-form-urlencoded"
@@ -10441,7 +10629,7 @@ ${isPlus && apiOk ? `
                                 nb_variations: nbVariations(variations),
                             });
                             if (ordersEnabled) {
-                                fetch("https://pickme.alwaysdata.net/shyrka/newetv", {
+                                fetch(baseUrlPickme + "/shyrka/newetv", {
                                     method: "POST",
                                     headers: {
                                         "Content-Type": "application/x-www-form-urlencoded"
@@ -10661,15 +10849,42 @@ ${isPlus && apiOk ? `
             //End Wheel Fix
 
             //Sauvegarder/Restaurer
+            //Données RR
+            const RRKeys = [
+                'RREnabled',
+                'enableDateFunction',
+                'enableReviewStatusFunction',
+                'enableColorFunction',
+                'filterEnabled',
+                'profilEnabled',
+                'pageEnabled',
+                'emailEnabled',
+                'lastUpdateEnabled',
+                'targetPercentageEnabled',
+                'autoSaveEnabled',
+                'emailTemplates'
+            ];
+
             //Fonction pour récupérer les données de localStorage
             function getLocalStorageData() {
                 let data = {};
+
                 for (let i = 0; i < localStorage.length; i++) {
                     const key = localStorage.key(i);
-                    if (key.endsWith('_c') || key.endsWith('_f')) {
+
+                    if (
+                        key.endsWith('_c') ||
+                        key.endsWith('_f') ||
+                        key.startsWith('order_')
+                    ) {
                         data[key] = localStorage.getItem(key);
                     }
                 }
+
+                RRKeys.forEach(key => {
+                    data[key] = localStorage.getItem(key);
+                });
+
                 return data;
             }
 
@@ -10699,7 +10914,7 @@ ${isPlus && apiOk ? `
                         if (!excludedKeys.includes(key)) {
                             data[key] = GM_getValue(key);
                         } else {
-                            console.log(`Exclusion de la clé : ${key}`);
+                            console.log(`[PïckMe] Exclusion de la clé : ${key}`);
                         }
                     });
 
@@ -10715,7 +10930,7 @@ ${isPlus && apiOk ? `
                     };
 
                     //Effectuer la requête fetch
-                    const response = await fetch("https://pickme.alwaysdata.net/shyrka/save", {
+                    const response = await fetch(baseUrlPickme + "/shyrka/save", {
                         method: "POST",
                         headers: {
                             "Content-Type": "application/json"
@@ -10729,7 +10944,7 @@ ${isPlus && apiOk ? `
                     }
 
                     const responseData = await response.json();
-                    console.log("Sauvegarde réussie");
+                    console.log("[PïckMe] Sauvegarde réussie");
 
                     //Gérer les données de réponse
                     if (responseData.lastSaveDate) {
@@ -10808,8 +11023,7 @@ ${isPlus && apiOk ? `
 
             //Intégration dans restoreData
             async function restoreData(type) {
-                //Empêche le rechargement / fermeture
-                const needBlockUnload = (type === "all" || type === "settings");
+                const needBlockUnload = (type === "all" || type === "settings" || type === "orders");
                 if (needBlockUnload) {
                     window.onbeforeunload = (e) => { e.preventDefault(); e.returnValue = ""; };
                 }
@@ -10821,11 +11035,12 @@ ${isPlus && apiOk ? `
 
                 try {
                     const formData = new URLSearchParams({ version, token: API_TOKEN });
-                    const response = await fetch("https://pickme.alwaysdata.net/shyrka/restore", {
+                    const response = await fetch(baseUrlPickme + "/shyrka/restore", {
                         method: "POST",
                         headers: { "Content-Type": "application/x-www-form-urlencoded" },
                         body: formData.toString()
                     });
+
                     if (!response.ok) throw new Error(`Erreur restauration : ${response.status} ${response.statusText}`);
 
                     const data = await response.json();
@@ -10833,16 +11048,24 @@ ${isPlus && apiOk ? `
 
                     const favHideKeys = entries.filter(([k]) => k.endsWith("_c") || k.endsWith("_f"));
                     const settingsKeys = entries.filter(([k]) => !(k.endsWith("_c") || k.endsWith("_f")));
+                    const orderKeys = entries.filter(([k]) => k.startsWith("order_"));
                     const hasStoredProd = data.storedProducts !== undefined;
+
+                    const RRSettings = entries.filter(([k]) => RRKeys.includes(k));
 
                     const doSettings = (type === "all" || type === "settings");
                     const doStoredProd = (type === "all" || type === "products");
                     const doFavHide = (type === "all" || type === "favhide");
+                    const doRRSettings = (type === "all" || type === "RRsettings");
+                    const doOrders = (type === "all" || type === "orders");
 
                     let totalOps = 0;
                     if (doStoredProd && hasStoredProd) totalOps += 1;
                     if (doFavHide) totalOps += favHideKeys.length;
                     if (doSettings) totalOps += settingsKeys.length;
+                    if (doRRSettings) totalOps += RRSettings.length;
+                    if (doOrders) totalOps += orderKeys.length;
+
                     let done = 0;
 
                     if (doStoredProd && hasStoredProd) {
@@ -10861,25 +11084,48 @@ ${isPlus && apiOk ? `
                         }
                     }
 
-                    if (doFavHide) {
-                        const chunkSize = 500;
-                        for (let i = 0; i < favHideKeys.length; i += chunkSize) {
-                            const batch = favHideKeys.slice(i, i + chunkSize);
-
+                    if (doRRSettings) {
+                        const chunkSize = 50;
+                        for (let i = 0; i < RRSettings.length; i += chunkSize) {
+                            const batch = RRSettings.slice(i, i + chunkSize);
                             for (const [k, v] of batch) {
                                 localStorage.setItem(k, v);
                                 ++done;
                             }
-
                             update(done / totalOps * 100);
                             await new Promise(r => setTimeout(r, 0));
                         }
                     }
-                }
-                catch (err) {
+
+                    if (doFavHide) {
+                        const chunkSize = 500;
+                        for (let i = 0; i < favHideKeys.length; i += chunkSize) {
+                            const batch = favHideKeys.slice(i, i + chunkSize);
+                            for (const [k, v] of batch) {
+                                localStorage.setItem(k, v);
+                                ++done;
+                            }
+                            update(done / totalOps * 100);
+                            await new Promise(r => setTimeout(r, 0));
+                        }
+                    }
+
+                    if (doOrders) {
+                        const chunkSize = 100;
+                        for (let i = 0; i < orderKeys.length; i += chunkSize) {
+                            const batch = orderKeys.slice(i, i + chunkSize);
+                            for (const [k, v] of batch) {
+                                localStorage.setItem(k, v);
+                                ++done;
+                            }
+                            update(done / totalOps * 100);
+                            await new Promise(r => setTimeout(r, 0));
+                        }
+                    }
+
+                } catch (err) {
                     console.error("Erreur lors de la restauration :", err);
-                }
-                finally {
+                } finally {
                     if (needBlockUnload) window.onbeforeunload = null;
                 }
             }
@@ -10891,7 +11137,7 @@ ${isPlus && apiOk ? `
                         token: API_TOKEN,
                     });
 
-                    const response = await fetch("https://pickme.alwaysdata.net/shyrka/lastsave", {
+                    const response = await fetch(baseUrlPickme + "/shyrka/lastsave", {
                         method: "POST",
                         headers: {
                             "Content-Type": "application/x-www-form-urlencoded"
@@ -11013,7 +11259,17 @@ ${isPlus && apiOk ? `
                 insertSortMenu();
             }
 
-            //Partage de reco
+            //Partage de recos
+
+            //Pour savoir si l'utilisateur est sur iOS
+            function isIOS() {
+                if (forceIos) {
+                    return true;
+                } else {
+                    return /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+                }
+            }
+
             function insertButton() {
                 const button = document.createElement('button');
                 button.id = 'share-main-button';
@@ -11242,7 +11498,7 @@ ${isPlus && apiOk ? `
                     new: onlyNew,
                 };
 
-                fetch('https://pickme.alwaysdata.net/shyrka/sharereco', {
+                fetch(baseUrlPickme + '/shyrka/sharereco', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -11256,38 +11512,130 @@ ${isPlus && apiOk ? `
                             throw new Error("Token invalide");
                         });
                     } else if (!response.ok) {
-                        throw new Error("Erreur lors de l'appel à l'API, status: " + response.status);
+                        throw new Error("Erreur API: " + response.status);
                     }
                     return response.json();
                 })
                     .then(data => {
                     if (data.url) {
-                        //Construire le texte à copier dans le presse-papiers
-                        let pasteText = '[Recommandations](' + data.url + ")\n" + data.text;
-                        if (onlyNew) {
-                            pasteText = '[Recommandations Horaire/Nouvelles](' + data.url + ")\n" + data.text;
-                        }
+                        let pasteText = onlyNew
+                        ? '[Recommandations Horaire/Nouvelles](' + data.url + ")\n" + data.text
+                        : '[Recommandations](' + data.url + ")\n" + data.text;
 
                         if (shareOnlyProduct) {
                             pasteText = data.url;
                         }
-                        navigator.clipboard.writeText(pasteText)
-                            .then(() => {
-                            alert("Les produits sont copiés dans le presse-papiers, il ne reste plus qu'à coller sur discord");
-                        })
-                            .catch(err => {
-                            console.error("Erreur lors de la copie dans le presse-papiers", err);
-                            alert("Erreur lors de la copie dans le presse-papiers");
-                        });
+
+                        if (isIOS()) {
+                            //Stocker le texte globalement + afficher bouton
+                            lastGeneratedShareText = pasteText;
+                            showCopyButton();
+                        } else {
+                            navigator.clipboard.writeText(pasteText)
+                                .then(() => {
+                                alert("Les produits sont copiés dans le presse-papiers, il ne reste plus qu'à coller sur discord");
+                            })
+                                .catch(err => {
+                                console.error("Erreur lors de la copie dans le presse-papiers", err);
+                                alert("Erreur lors de la copie dans le presse-papiers");
+                            });
+                        }
                     } else {
                         alert("Erreur: réponse invalide de l'API");
                     }
                 })
                     .catch(err => {
-                    console.error("Erreur lors de l'appel à l'API", err);
+                    console.error("Erreur API", err);
                     alert("Erreur lors de l'appel à l'API");
                 });
             }
+
+            //Bouton "Copier" pour iOS uniquement
+            let lastGeneratedShareText = null;
+
+            function showCopyButton() {
+                //Supprimer un bouton précédent s'il existe déjà
+                const mainBtn = document.getElementById('share-main-button');
+                if (mainBtn) {
+                    mainBtn.style.display = 'none';
+                }
+
+                const mainBtnChoice = document.getElementById('choice-container');
+                if (mainBtnChoice) {
+                    mainBtnChoice.style.display = 'none';
+                }
+
+                const mainBtnCopy = document.getElementById('ios-copy-btn');
+                if (mainBtnCopy) {
+                    mainBtnCopy.style.display = 'none';
+                }
+
+                const copyBtn = document.createElement('button');
+                copyBtn.id = 'ios-copy-btn';
+                copyBtn.className = 'bouton-action';
+                copyBtn.textContent = 'Copier';
+
+                if (isMobile()) {
+                    copyBtn.style.marginBottom = '5px';
+                    if (hideEnabled) {
+                        copyBtn.style.marginTop = '-10px';
+                    } else if (menuSorting) {
+                        copyBtn.style.marginTop = '5px';
+                    }
+                } else {
+                    copyBtn.style.marginLeft = '5px';
+                }
+
+                copyBtn.addEventListener('click', () => {
+                    navigator.clipboard.writeText(lastGeneratedShareText)
+                        .then(() => {
+                        alert("Les produits sont copiés dans le presse-papiers, il ne reste plus qu'à coller sur discord");
+                    })
+                        .catch(err => {
+                        console.error("Erreur clipboard", err);
+                    });
+                });
+
+                //Placement du bouton dans l'interface
+                const divCacherHaut = document.querySelector('#divCacherHaut');
+
+                if (isMobile()) {
+                    if (hideEnabled && divCacherHaut) {
+                        divCacherHaut.insertAdjacentElement('afterend', copyBtn);
+                    } else {
+                        const resultats = document.querySelector('#vvp-items-grid-container > p');
+                        const vineGrid = document.querySelector('#vvp-items-grid');
+
+                        if (resultats) {
+                            resultats.after(copyBtn);
+                        } else if (vineGrid) {
+                            vineGrid.before(copyBtn);
+                        }
+                    }
+                } else {
+                    const pResultats = document.querySelector('#vvp-items-grid-container > p');
+                    if (pResultats) {
+                        let inserted = false;
+                        pResultats.childNodes.forEach(node => {
+                            if (!inserted && node.nodeType === Node.TEXT_NODE && node.textContent.includes("résultats")) {
+                                const pos = node.textContent.indexOf("résultats") + "résultats".length;
+                                const avant = node.textContent.substring(0, pos);
+                                const apres = node.textContent.substring(pos);
+
+                                const textAvant = document.createTextNode(avant);
+                                const textApres = document.createTextNode(apres);
+
+                                pResultats.replaceChild(textAvant, node);
+                                pResultats.insertBefore(copyBtn, textAvant.nextSibling);
+                                pResultats.insertBefore(textApres, copyBtn.nextSibling);
+
+                                inserted = true;
+                            }
+                        });
+                    }
+                }
+            }
+
 
             if (shareReco && apiOk && valeurQueue == "potluck") {
                 insertButton();
@@ -11670,7 +12018,7 @@ ${isPlus && apiOk ? `
             }
 
             //Appeler la fonction immédiatement au chargement de la page
-            if (autoRefresh && apiOk) {
+            if (autoRefresh) {
                 reloadAtNextFullHour();
             }
 
@@ -11870,7 +12218,7 @@ ${isPlus && apiOk ? `
                     const messageToCopy = getMessage(`**${baseTitle}**`);
 
                     navigator.clipboard.writeText(messageToCopy)
-                        .then(() => console.log('Résumé de la ronde copié dans le presse-papiers.'))
+                        .then(() => console.log('[PïckMe] Résumé de la ronde copié dans le presse-papiers.'))
                         .catch(err => console.error('Erreur lors de la copie dans le presse-papiers:', err));
 
                     alert("Copié dans le presse-papiers :\n\n" + message);
@@ -12040,13 +12388,22 @@ ${isPlus && apiOk ? `
             }
         }
 
+        function alertRR() {
+            if (localStorage.getItem('useRR') === '1') {
+                alert("ReviewRemember a été détecté !\n\nDans cette version de PickMe, ReviewRemember n'est plus nécessaire (vos données ne seront pas perdues) et ne sera d'ailleurs plus mis à jour.\n\nPour profiter des nouveautés de ReviewRemember, voici comment le désactiver ou le supprimer :\n\n1. Cliquez sur l’icône Tampermonkey dans la barre du navigateur.\n2. Choisissez \"Tableau de bord\".\n3. Repérez le script \"ReviewRemember\" dans la liste.\n4. Cliquez sur l’icône de corbeille pour le supprimer, ou décochez la case pour le désactiver.\n\nEn cas de problème, n'hésitez pas à demander de l'aide sur le discord Amazon Vine FR.");
+                localStorage.setItem('useRR', '0');
+            }
+        }
+
         //Fix iPhone
         if (document.readyState !== 'loading') {
             runPickMe();
+            alertRR();
         }
         else {
             document.addEventListener('DOMContentLoaded', function () {
                 runPickMe();
+                alertRR();
             });
         }
     } catch (err) {
