@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PickMe
 // @namespace    http://tampermonkey.net/
-// @version      3.0.0
+// @version      3.0.1
 // @description  Plugin d'aide à la navigation pour les membres du discord Amazon Vine FR
 // @author       Créateur/Codeur principal : MegaMan / Codeur secondaire : Sulff / Testeurs : Louise, JohnnyBGoody, L'avocat du Diable et Popato (+ du code de lelouch_di_britannia, FMaz008 et Thorvarium)
 // @match        https://www.amazon.fr/vine/vine-items
@@ -26,7 +26,7 @@
 // @grant        GM_listValues
 // @run-at       document-start
 // @noframes
-// @require      https://raw.githubusercontent.com/teitong/reviewremember/main/ReviewRememberPM.user.js??v=1.9
+// @require      https://raw.githubusercontent.com/teitong/reviewremember/main/ReviewRememberPM.user.js??v=1.9.1
 // @require      https://vinepick.me/scripts/jquery-3.7.1.min.js
 // @require      https://vinepick.me/scripts/heic2any.min.js
 //==/UserScript==
@@ -5100,9 +5100,18 @@ li.a-last a span.larr {      /* Cible le span larr dans les li a-last */
             }
 
             //On affiche les pages en haut si l'option est activée
+            //Pour chercher '.a-text-center' ou 'nav.a-text-center'
+            function findPaginationBlock() {
+                // Cherche tous les éléments .a-text-center qui contiennent un ul.a-pagination
+                return Array.from(document.querySelectorAll('.a-text-center'))
+                    .find(el => el.querySelector('ul.a-pagination') && (
+                    el.tagName === 'NAV' || el.getAttribute('role') === 'navigation'
+                ));
+            }
+
             if (paginationEnabled && apiOk) {
                 //Sélection du contenu HTML du div source
-                const sourceElement = document.querySelector('.a-text-center');
+                const sourceElement = findPaginationBlock();
                 //Vérifier si l'élément source existe
                 if (sourceElement) {
 
@@ -5218,6 +5227,7 @@ li.a-last a span.larr {      /* Cible le span larr dans les li a-last */
                     }
                 }
             }
+
             //Menu PickMe
             //Ajoute le style CSS pour la fenêtre popup flottante
             const styleMenu = document.createElement('style');
