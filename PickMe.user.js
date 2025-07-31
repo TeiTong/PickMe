@@ -3780,6 +3780,11 @@ li.a-last a span.larr {      /* Cible le span larr dans les li a-last */
                 //On test la clé API car désactivé (variable non défini) sur les pages de RR sinon
                 if (apiOkRR) {
 
+                    const normalize = (str) => str
+                    .replace(/\u2019/g, "'") //apostrophe typographique → droite
+                    .replace(/\u00A0/g, ' ') //espace insécable → espace
+                    .trim();
+
                     const remplacements = {
                         "Voir la commande": "Commande",
                         "Donner un avis": "Avis",
@@ -3789,9 +3794,9 @@ li.a-last a span.larr {      /* Cible le span larr dans les li a-last */
 
                     const remplacerTextes = () => {
                         document.querySelectorAll('a.a-button-text').forEach(link => {
-                            const texte = link.textContent.trim();
-                            if (remplacements[texte]) {
-                                link.textContent = remplacements[texte];
+                            const texteNormalisé = normalize(link.textContent);
+                            if (remplacements[texteNormalisé]) {
+                                link.textContent = remplacements[texteNormalisé];
                             }
                         });
                     };
