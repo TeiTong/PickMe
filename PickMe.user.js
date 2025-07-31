@@ -3783,6 +3783,7 @@ li.a-last a span.larr {      /* Cible le span larr dans les li a-last */
                     const remplacements = {
                         "Voir la commande": "Commande",
                         "Donner un avis": "Avis",
+                        "Donner un avis sur l'article": "Avis",
                         "Voir le commentaire": "Commentaire"
                     };
 
