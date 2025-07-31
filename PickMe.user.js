@@ -2,7 +2,7 @@
 // @name         PickMe
 // @namespace    http://tampermonkey.net/
 // @version      3.0.2
-// @description  Plugin d'aide à la navigation pour les membres du discord Amazon Vine FR
+// @description  Plugin d'aide à la navigation pour les membres du discord Amazon Vine FR : https://discord.gg/amazonvinefr
 // @author       Créateur/Codeur principal : MegaMan / Codeur secondaire : Sulff / Testeurs : Louise, JohnnyBGoody, L'avocat du Diable et Popato (+ du code de lelouch_di_britannia, FMaz008 et Thorvarium)
 // @match        https://www.amazon.fr/vine/vine-items
 // @match        https://www.amazon.fr/vine/vine-items?queue=*
@@ -9566,7 +9566,6 @@ ${isPlus && apiOk ? `
                         let displayHTML = "";
                         //On extrait en début de bloc pour alléger les appels
                         const { etv_real: etvReal, price } = orderData;
-
                         //On prépare les attributs data-* du wrapper
                         const wrapperAttrs = `class="order-item" data-price=${price !== null ? price : ''} data-etv=${etvReal !== null ? etvReal : ''}`;
 
@@ -9575,13 +9574,17 @@ ${isPlus && apiOk ? `
                                 if (etvReal !== null) {
                                     if (etvReal === "0.00") {
                                         if (price !== null) {
-                                            displayHTML = `<div ${wrapperAttrs}>${showPriceIcon ? `<span>${iconPrice}</span>` : ''}<span>${price}€</span><br><span>${iconETV}</span><span style="color: red;">${etvReal}€</span></div>`;
+                                            displayHTML = `<div ${wrapperAttrs}>${showPriceIcon ? `<span>${iconPrice}</span>` : ''}<span>${price}€</span><br>${showPriceIcon ? `<span>${iconETV}</span>` : ''}<span style="color: red;">${etvReal}€</span></div>`;
                                         } else {
                                             displayHTML = `<div ${wrapperAttrs}>${showPriceIcon ? `<span>${iconETV}</span><br>` : ''}<span style="color: red;">${etvReal}€</span></div>`;
                                         }
                                     } else {
                                         if (price !== null) {
-                                            displayHTML = `<div ${wrapperAttrs}>${showPriceIcon ? `<span>${iconPrice}${iconETV}</span><br>` : ''}<span>${etvReal}€</span></div>`;
+                                            if (etvReal !== price) {
+                                                displayHTML = `<div ${wrapperAttrs}>${showPriceIcon ? `<span>${iconPrice}</span>` : ''}<span>${price}€</span><br>${showPriceIcon ? `<span>${iconETV}</span>` : ''}<span>${etvReal}€</span></div>`;
+                                            } else {
+                                                displayHTML = `<div ${wrapperAttrs}>${showPriceIcon ? `<span>${iconPrice}${iconETV}</span><br>` : ''}<span>${etvReal}€</span></div>`;
+                                            }
                                         } else {
                                             displayHTML = `<div ${wrapperAttrs}>${showPriceIcon ? `<span>${iconETV}</span><br>` : ''}<span>${etvReal}€</span></div>`;
                                         }
@@ -9597,17 +9600,25 @@ ${isPlus && apiOk ? `
                                 }
                             }
                         } else {
-                            //Version “desktop”
+                            //Version desktop
                             if (showPrice) {
                                 if (etvReal !== null) {
                                     if (etvReal === "0.00") {
                                         if (price !== null) {
-                                            displayHTML = `<div ${wrapperAttrs}>${showPriceIcon ? `<span>${iconPrice}</span>` : ''}<span>${price}€</span> / <span>${iconETV}</span><span style="color: red;">${etvReal}€</span></div>`;
+                                            displayHTML = `<div ${wrapperAttrs}>${showPriceIcon ? `<span>${iconPrice}</span>` : ''}<span>${price}€</span> / ${showPriceIcon ? `<span>${iconETV}</span>` : ''}<span style="color: red;">${etvReal}€</span></div>`;
                                         } else {
                                             displayHTML = `<div ${wrapperAttrs}>${showPriceIcon ? `<span>${iconETV}</span>` : ''}<span style="color: red;">${etvReal}€</span></div>`;
                                         }
                                     } else {
-                                        displayHTML = `<div ${wrapperAttrs}>${showPriceIcon ? `<span>${iconPrice}${iconETV}</span>` : ''}<span>${etvReal}€</span></div>`;
+                                        if (price !== null) {
+                                            if (etvReal !== price) {
+                                                displayHTML = `<div ${wrapperAttrs}>${showPriceIcon ? `<span>${iconPrice}</span>` : ''}<span>${price}€</span> / ${showPriceIcon ? `<span>${iconETV}</span>` : ''}<span>${etvReal}€</span></div>`;
+                                            } else {
+                                                displayHTML = `<div ${wrapperAttrs}>${showPriceIcon ? `<span>${iconPrice}${iconETV}</span>` : ''}<span>${etvReal}€</span></div>`;
+                                            }
+                                        } else {
+                                            displayHTML = `<div ${wrapperAttrs}>${showPriceIcon ? `<span>${iconETV}</span>` : ''}<span>${etvReal}€</span></div>`;
+                                        }
                                     }
                                 } else {
                                     displayHTML = `<div ${wrapperAttrs}>${showPriceIcon ? `<span>${iconPrice}</span> <span>${price}€</span>` : `<span>${price}€ / N/A</span>`}</div>`;
@@ -9616,6 +9627,7 @@ ${isPlus && apiOk ? `
                                 displayHTML = `<div ${wrapperAttrs}>${showPriceIcon ? `<span>${iconETV}</span>` : ''}<span${etvReal === "0.00" ? ' style="color: red;"' : ''}>${etvReal}€</span></div>`;
                             }
                         }
+
 
 
                         //Ajouter le drapeau si flagEnabled et flagETV, et que flagCountry est renseigné
