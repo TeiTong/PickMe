@@ -1,21 +1,23 @@
 **PickMe**
 
 Script TamperMonkey pour la communauté Amazon Vine France.
+Le script est entièrement gratuit.
 
 Rejoignez nous sur discord : https://discord.gg/amazonvinefr
 
 Fonctionnalités :
 
 - Mise en avant des nouveaux produits
+- Version mobile
 - Cacher les produits
-- Différence de quantité dans les catégories
+- Produits favoris
+- Recherche de produits
+- Enregistrement de vos avis
+- Statistiques sur les produits et vos commandes
 - Fix des produits en erreur
 - Cacher le header/footer
-- Affichage mobile
 - Etc...
 
-Wiki : https://pickme.alwaysdata.net/wiki/doku.php?id=plugins:pickme
-
-Autre plugin pour la gestion des avis : [ReviewRemember](https://github.com/TeiTong/reviewremember)
+Wiki : https://vinepick.me/wiki/doku.php?id=plugins:pickme
 
 Attention, le plugin ne fonctionne pas sans une clef API qu'il faut obtenir via le [discord](https://discord.gg/amazonvinefr)
