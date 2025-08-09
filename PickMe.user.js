@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PickMe
 // @namespace    http://tampermonkey.net/
-// @version      3.0.2
+// @version      3.0.3
 // @description  Plugin d'aide à la navigation pour les membres du discord Amazon Vine FR : https://discord.gg/amazonvinefr
 // @author       Créateur/Codeur principal : MegaMan / Codeur secondaire : Sulff / Testeurs : Louise, JohnnyBGoody, L'avocat du Diable et Popato (+ du code de lelouch_di_britannia, FMaz008 et Thorvarium)
 // @match        https://www.amazon.fr/vine/vine-items
@@ -26,7 +26,7 @@
 // @grant        GM_listValues
 // @run-at       document-start
 // @noframes
-// @require      https://raw.githubusercontent.com/teitong/reviewremember/main/ReviewRememberPM.user.js??v=1.9.2
+// @require      https://raw.githubusercontent.com/teitong/reviewremember/main/ReviewRememberPM.user.js??v=1.9.3
 // @require      https://vinepick.me/scripts/jquery-3.7.1.min.js
 // @require      https://vinepick.me/scripts/heic2any.min.js
 //==/UserScript==
