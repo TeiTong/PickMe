@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PickMe
 // @namespace    http://tampermonkey.net/
-// @version      3.0.3
+// @version      3.0.4
 // @description  Plugin d'aide à la navigation pour les membres du discord Amazon Vine FR : https://discord.gg/amazonvinefr
 // @author       Créateur/Codeur principal : MegaMan / Codeur secondaire : Sulff / Testeurs : Louise, JohnnyBGoody, L'avocat du Diable et Popato (+ du code de lelouch_di_britannia, FMaz008 et Thorvarium)
 // @match        https://www.amazon.fr/vine/vine-items
@@ -26,7 +26,7 @@
 // @grant        GM_listValues
 // @run-at       document-start
 // @noframes
-// @require      https://raw.githubusercontent.com/teitong/reviewremember/main/ReviewRememberPM.user.js??v=1.9.3
+// @require      https://raw.githubusercontent.com/teitong/reviewremember/main/ReviewRememberPM.user.js?v=1.9.4
 // @require      https://vinepick.me/scripts/jquery-3.7.1.min.js
 // @require      https://vinepick.me/scripts/heic2any.min.js
 //==/UserScript==
@@ -39,6 +39,12 @@ NOTES:
 (function() {
     try {
         'use strict';
+
+        //Pour éviter la multi exécution
+        if (window.__PM__) {
+            return;
+        }
+        window.__PM__ = true;
 
         //On exclu les pages que gère RR, on laisse juste pour les pages
         if (!window.location.href.includes('orders') && !window.location.href.includes('vine-reviews'))
@@ -3779,35 +3785,6 @@ li.a-last a span.larr {      /* Cible le span larr dans les li a-last */
                 const apiOkRR = GM_getValue("apiToken", false);
                 //On test la clé API car désactivé (variable non défini) sur les pages de RR sinon
                 if (apiOkRR) {
-
-                    const normalize = (str) => str
-                    .replace(/\u2019/g, "'") //apostrophe typographique → droite
-                    .replace(/\u00A0/g, ' ') //espace insécable → espace
-                    .trim();
-
-                    const remplacements = {
-                        "Voir la commande": "Commande",
-                        "Donner un avis": "Avis",
-                        "Donner un avis sur l'article": "Avis",
-                        "Voir le commentaire": "Commentaire"
-                    };
-
-                    const remplacerTextes = () => {
-                        document.querySelectorAll('a.a-button-text').forEach(link => {
-                            const texteNormalisé = normalize(link.textContent);
-                            if (remplacements[texteNormalisé]) {
-                                link.textContent = remplacements[texteNormalisé];
-                            }
-                        });
-                    };
-
-                    //Exécution immédiate pour les éléments déjà présents
-                    remplacerTextes();
-
-                    //Observation dynamique du DOM
-                    const observer = new MutationObserver(() => remplacerTextes());
-                    observer.observe(document.body, { childList: true, subtree: true });
-
                     if (headerEnabled) {
                         var styleHeaderRR = document.createElement('style');
 
@@ -4195,6 +4172,45 @@ li.a-last a span.larr {      /* Cible le span larr dans les li a-last */
 }
 `;
                 document.head.appendChild(noapiCss);
+            }
+
+            //Changement du texte des boutons dans Commandes et Avis
+            if (window.location.href.includes('orders') || window.location.href.includes('vine-reviews')) {
+
+                const normalize = (str) => str
+                .replace(/\u2019/g, "'") //apostrophe typographique → droite
+                .replace(/\u00A0/g, ' ') //espace insécable → espace
+                .trim();
+
+                const remplacements = {
+                    "Donner un avis sur l'article": "Donner un avis",
+                    "Détails de la commande": "Détails"
+                };
+
+                if (mobileEnabled) {
+                    remplacements = {
+                        "Voir la commande": "Commande",
+                        "Donner un avis": "Avis",
+                        "Donner un avis sur l'article": "Avis",
+                        "Voir le commentaire": "Commentaire"
+                    };
+                }
+
+                const remplacerTextes = () => {
+                    document.querySelectorAll('a.a-button-text').forEach(link => {
+                        const texteNormalisé = normalize(link.textContent);
+                        if (remplacements[texteNormalisé]) {
+                            link.textContent = remplacements[texteNormalisé];
+                        }
+                    });
+                };
+
+                //Exécution immédiate pour les éléments déjà présents
+                remplacerTextes();
+
+                //Observation dynamique du DOM
+                const observer = new MutationObserver(() => remplacerTextes());
+                observer.observe(document.body, { childList: true, subtree: true });
             }
 
             //Gestion des thèmes couleurs
