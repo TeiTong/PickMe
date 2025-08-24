@@ -2475,9 +2475,15 @@ NOTES:
                                             element.style.height = `${height}px`;
                                         });
                                     } else {
-                                        document.querySelectorAll('.vvp-item-tile .a-truncate').forEach(function(element) {
-                                            element.style.cssText = 'max-height: 5em !important;';
-                                        });
+                                        if (mobileEnabled) {
+                                            document.querySelectorAll('.vvp-item-tile .a-truncate').forEach(function(element) {
+                                                element.style.cssText = 'max-height: 5em !important;';
+                                            });
+                                        } else {
+                                            document.querySelectorAll('.vvp-item-tile .a-truncate').forEach(function(element) {
+                                                element.style.cssText = 'max-height: 5.6em !important;';
+                                            });
+                                        }
                                     }
                                 }
                             }
