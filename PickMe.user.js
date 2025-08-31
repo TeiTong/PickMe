@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PickMe
 // @namespace    http://tampermonkey.net/
-// @version      3.0.5
+// @version      3.1.0
 // @description  Plugin d'aide à la navigation pour les membres du discord Amazon Vine FR : https://discord.gg/amazonvinefr
 // @author       Créateur/Codeur principal : MegaMan / Codeur secondaire : Sulff / Testeurs : Louise, JohnnyBGoody, L'avocat du Diable et Popato (+ du code de lelouch_di_britannia, FMaz008 et Thorvarium)
 // @match        https://www.amazon.fr/vine/vine-items
@@ -1403,6 +1403,7 @@ NOTES:
             let extendedDelay = GM_getValue("extendedDelay", '600');
             let isParentEnabled = GM_getValue("isParentEnabled", true);
             let wheelfixEnabled = GM_getValue("wheelfixEnabled", true);
+            let wheelfixManualEnabled = GM_getValue("wheelfixManualEnabled", true);
             let autohideEnabled = GM_getValue("autohideEnabled", false);
 
             let savedButtonColor = GM_getValue('selectedButtonColor', 'default');
@@ -1523,6 +1524,7 @@ NOTES:
             let rondeHorizontal = GM_getValue('rondeHorizontal', '50%');
             let rondeVertical = GM_getValue('rondeVertical', '50px');
             let rondeVerticalHeader = GM_getValue('rondeVerticalHeader', '50px');
+            let rondeNewPause = GM_getValue('rondeNewPause', false);
 
             let nbReco = GM_getValue('nbReco', false);
 
@@ -1545,6 +1547,8 @@ NOTES:
             let oldCheckoutEnabled = GM_getValue('oldCheckoutEnabled', false);
             let checkoutNewTab = GM_getValue('checkoutNewTab', false);
             let showCheckout = GM_getValue('showCheckout', false);
+
+            let inverseSortFav = GM_getValue('inverseSortFav', false);
 
             //Enregistrement des autres valeurs de configuration
             GM_setValue("highlightEnabled", highlightEnabled);
@@ -1573,6 +1577,7 @@ NOTES:
             GM_setValue("extendedDelay", extendedDelay);
             GM_setValue("isParentEnabled", isParentEnabled);
             GM_setValue("wheelfixEnabled", wheelfixEnabled);
+            GM_setValue("wheelfixManualEnabled", wheelfixManualEnabled);
             GM_setValue("autohideEnabled", autohideEnabled);
             GM_setValue("selectedButtonColor", savedButtonColor);
             GM_setValue("fastCmdEnabled", fastCmdEnabled);
@@ -1689,6 +1694,7 @@ NOTES:
             GM_setValue("rondeFirst", rondeFirst);
             GM_setValue("rondeHide", rondeHide);
             GM_setValue("rondeFixed", rondeFixed);
+            GM_setValue("rondeNewPause", rondeNewPause);
 
             GM_setValue("nbReco", nbReco);
 
@@ -1711,6 +1717,8 @@ NOTES:
             GM_setValue("oldCheckoutEnabled", oldCheckoutEnabled);
             GM_setValue("checkoutNewTab", checkoutNewTab);
             GM_setValue("showCheckout", showCheckout);
+
+            GM_setValue("inverseSortFav", inverseSortFav);
 
             //Modification du texte pour l'affichage mobile
             var pageX = "Page X";
@@ -4666,6 +4674,11 @@ li.a-last a span.larr {      /* Cible le span larr dans les li a-last */
                     playSound(recoSoundUrl);
                 }
 
+                //Ronde en pause si un nouveau produit
+                if (apiOk && imgNew && rondeEnabled && rondeNewPause && GM_getValue('rondeContinue', false) && (window.location.href.includes("queue=encore") || window.location.href.includes("queue=all_items"))) {
+                    document.getElementById('pauseButton').click();
+                }
+
                 //Durée maximale de l'ancienneté en millisecondes (ici: 1 jour)
                 const MAX_c_AGE = 24 * 60 * 60 * 1000;
 
@@ -5684,6 +5697,8 @@ select.btn-like {
                 const responsePremium = await verifyTokenPremium(API_TOKEN);
                 const responsePlus = await verifyTokenPlus(API_TOKEN);
                 const responseReco = await verifyTokenReco(API_TOKEN);
+                const addressOptions = document.querySelectorAll('.vvp-address-option');
+                console.log(addressOptions);
                 let apiToken = "";
                 if (API_TOKEN == undefined) {
                     apiToken = "";
@@ -5749,7 +5764,7 @@ select.btn-like {
       ${createCheckbox('mobileEnabled', 'Utiliser l\'affichage mobile', 'Optimise l\affichage sur mobile, pour éviter de mettre la "Version PC". Il est conseillé de cacher également l\'entête avec cette option. Non compatible avec l\'affichage du nom complet des produits et l\'affichage réduit.')}
       ${createCheckbox('headerEnabled', 'Cacher totalement l\'entête de la page', 'Cache le haut de la page Amazon, celle avec la zone de recherche et les menus.')}
       ${createCheckbox('extendedEnabled', 'Afficher le nom complet des produits', 'Affiche 4 lignes, si elles existent, au nom des produits au lieu de 2 en temps normal. Non compatible avec l\'affichage alternatif.')}
-      ${createCheckbox('wheelfixEnabled', 'Corriger le chargement infini des produits', 'Corrige le bug quand un produit ne charge pas (la petite roue qui tourne sans fin). Attention, même si le risque est très faible, on modifie une information transmise à Amazon, ce qui n\'est pas avec un risque de 0%.')}
+      ${createCheckbox('wheelfixEnabled', 'Corriger le chargement infini des produits', 'Corrige le bug quand un produit ne charge pas (la petite roue qui tourne sans fin). Il existe également un correctif universel dans les paramètres avancées si celui-ci ne fonctionne pas. Attention, même si le risque est très faible, on modifie une information transmise à Amazon, ce qui n\'est pas avec un risque de 0%.')}
       ${createCheckbox('fullloadEnabled', 'N\'afficher la page qu\'après son chargement complet', 'Attend le chargement complet des modifications de PickMe avant d\'afficher la page. Cela peut donner la sensation d\'un chargement plus lent de la page mais évite de voir les produits cachés de façon succincte ou le logo Amazon par exemple.')}
       ${createCheckbox('autohideEnabled', 'Utiliser le filtre par mots-clés', 'Permet de cacher automatiquement des produits selon des mots clés, ou au contraire d\'en mettre en avant. La configuration se fait via le bouton "Configurer les mots-clés pour le filtre". Peut ajouter de la latence au chargement de la page, surtout si l\'option "N\'afficher la page qu\'après son chargement complet" est activée.')}
       ${createCheckbox('ordersEnabled', 'Afficher code erreur/Envoyer mes commandes', 'Afficher un code erreur quand une commande ne passe pas. Attention, cela envoi également vos commandes sur le serveur pour le besoin de certaines fonctions (comme pouvoir voir le prix par mois/année de vos commandes sur le discord).')}
@@ -5798,7 +5813,7 @@ select.btn-like {
         <option value="ALL">Tous les articles</option>
       </select>
     </div>
-${isPlus && apiOk ? `
+${addressOptions.length && isPlus && apiOk ? `
   <div class="address-selector-container flex-item-theme" style="width: 100%;">
     <label for="address-selector">Adresse pour la commande rapide :</label>
     <select id="address-selector" style="width: 100%; margin-bottom: 10px; height: 31px;">
@@ -7348,6 +7363,7 @@ ${isPlus && apiOk ? `
                 ajouterOptionCheckbox('rondeFirst', 'Toujours commencer la ronde en page 1');
                 ajouterOptionCheckbox('rondeResume', 'A la fin de la ronde, copier le résumé de celle-ci dans le presse-papiers');
                 ajouterOptionCheckbox('rondeHide', 'Cacher automatiquement tous les objets à chaque page');
+                ajouterOptionCheckbox('rondeNewPause', 'Mettre en pause la ronde si un nouveau produit est découvert');
                 ajouterOptionCheckbox('rondeFixed', 'Le bouton ne défile pas avec la page, il est dans une position fixe');
                 ajouterSeparateur();
                 ajouterOptionTexte('rondeDelay', 'Délai (en secondes) entre chaque page', '5');
@@ -7396,11 +7412,13 @@ ${isPlus && apiOk ? `
                 ajouterOptionCheckbox('taxValue', 'Remonter l\'affichage de la valeur fiscale estimée (et des variantes sur mobile)');
                 ajouterOptionCheckbox('isParentEnabled', 'Distinguer les produits ayant des variantes. Si c\'est le cas, cela ajoute l\'icone 🛍️ dans le texte du bouton des détails');
                 ajouterOptionCheckbox('notepadEnabled', 'Activer le Bloc-notes');
+                ajouterOptionCheckbox('wheelfixManualEnabled', 'Activer la correction universelle du chargement infini des produits');
                 ajouterOptionTexte('sizeMobileCat', 'Tailles des boutons de catégories (RFY, AFA, AI) en affichage mobile', '32px');
                 ajouterSeparateur();
                 ajouterOptionCheckbox('notifVolumeEnabled', 'Contrôler le volume des notifications');
                 ajouterOptionTexte('notifVolume', 'Volume des notifications, valeur entre 0 et 1 (0 = muet, 1 = max)', '1');
                 ajouterSeparateur();
+                ajouterOptionCheckbox('inverseSortFav', 'Trier les favoris du plus ancien au plus récent (au lieu de l\'inverse par défaut)');
                 ajouterOptionTexte('favNew', 'Durée (en minutes) pendant laquelle un favori est marqué comme étant récent dans l\'onglet des favoris', '1');
                 ajouterOptionTexte('favOld', 'Durée (en heures) au delà de laquelle un favori est marqué comme étant obsolète dans l\'onglet des favoris', '12');
                 ajouterSeparateur();
@@ -8565,6 +8583,12 @@ ${isPlus && apiOk ? `
             function mesFavoris() {
                 const MAX_fS = 200; //Limite des favoris affichés
 
+                //Fonction pour convertir une date européenne en format de date interprétable
+                function parseEuropeanDate(dateStr) {
+                    const [day, month, year, hours, minutes, seconds] = dateStr.split(/[/ :]/);
+                    return new Date(`${year}-${month}-${day}T${hours}:${minutes}:${seconds}`);
+                }
+
                 if (apiKey && hideEnabled) {
                     //Ajouter un nouvel onglet dans le menu
                     const menu = document.querySelector(".a-tabs") || ensureMobileTabsContainer();
@@ -8579,50 +8603,108 @@ ${isPlus && apiOk ? `
                     container.id = 'favorisContainer';
                     container.style.display = 'none';
                     container.className = 'a-container vvp-body';
+                    const headerRow = isMobile()
+                    ? `
+    <tr class="vvp-orders-table--heading-row">
+      <th id="vvp-orders-table--order-date-heading"
+          class="vvp-orders-table--text-col aok-nowrap"
+          style="padding-bottom: 10px;" colspan="4">
+        <a href="javascript:void(0);" id="triLastSeen">Trier</a>
+      </th>
+    </tr>`
+                    : `
+    <tr class="vvp-orders-table--heading-row">
+      <th id="vvp-orders-table--image-col-heading"></th>
+      <th id="vvp-orders-table--product-title-heading" class="vvp-orders-table--text-col aok-nowrap" style="padding-bottom: 15px;">Produit</th>
+      <th id="vvp-orders-table--order-date-heading" class="vvp-orders-table--text-col aok-nowrap" style="padding-bottom: 10px;">
+        <a href="javascript:void(0);" id="triLastSeen">Vu pour la dernière fois</a>
+      </th>
+      <th id="vvp-orders-table--actions-col-heading"></th>
+    </tr>`;
+
                     container.innerHTML = `
-            <div class="a-box a-tab-content" role="tabpanel" tabindex="0">
-                <div class="a-box-inner">
-                    <div class="a-section vvp-tab-content">
-                        <div class="vvp-orders-table--heading-top" style="display: flex; justify-content: space-between; align-items: center;">
-                            <h3 id="favorisCount">Favoris (0)</h3>
-                            <span class="a-button a-button-primary vvp-orders-table--action-btn">
-                                <span class="a-button-inner">
-                                    <button id="supprimerTousFavoris" class="a-button-input" aria-labelledby="supprimer-tous"></button>
-                                    <span class="a-button-text" aria-hidden="true" id="supprimer-tous">Tout supprimer</span>
-                                </span>
-                            </span>
-                        </div>
-                        <table class="a-normal vvp-orders-table">
-                            <thead>
-                                <tr class="vvp-orders-table--heading-row">
-                                    <th id="vvp-orders-table--image-col-heading"></th>
-                                    <th id="vvp-orders-table--product-title-heading" class="vvp-orders-table--text-col aok-nowrap" style="padding-bottom: 15px;">Produit</th>
-                                    <th id="vvp-orders-table--order-date-heading" class="vvp-orders-table--text-col aok-nowrap" style="padding-bottom: 10px;">Vu pour la dernière fois</th>
-                                    <th id="vvp-orders-table--actions-col-heading"></th>
-                                </tr>
-                            </thead>
-                            <tbody id="favorisList"></tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-        `;
+  <div class="a-box a-tab-content" role="tabpanel" tabindex="0">
+    <div class="a-box-inner">
+      <div class="a-section vvp-tab-content">
+        <div class="vvp-orders-table--heading-top" style="display: flex; justify-content: space-between; align-items: center;">
+          <h3 id="favorisCount">Favoris (0)</h3>
+          <div class="button-container-fav">
+            <span class="a-button a-button-primary vvp-orders-table--action-btn" id="a-autoid-4">
+              <span class="a-button-inner">
+                <button id="supprimerTousFavoris" class="a-button-input" aria-labelledby="supprimer-tous"></button>
+                <span class="a-button-text" aria-hidden="true" id="supprimer-tous">Tout supprimer</span>
+              </span>
+            </span>
+            <span class="a-button a-button-primary vvp-orders-table--action-btn" id="a-autoid-5">
+              <span class="a-button-inner">
+                <button id="supprimerFavorisColories" class="a-button-input" aria-labelledby="supprimer-colories"></button>
+                <span class="a-button-text" aria-hidden="true" id="supprimer-colories">Supprimer les anciens favoris</span>
+              </span>
+            </span>
+          </div>
+        </div>
+        <table class="a-normal vvp-orders-table">
+          <thead>
+            ${headerRow}
+          </thead>
+          <tbody id="favorisList"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+`;
                     document.querySelector('#a-page > div.a-container.vvp-body > div.a-tab-container.vvp-tab-set-container').appendChild(container);
 
                     //Ajouter du style pour l'espace au-dessus de la première ligne de produit
                     const style = document.createElement('style');
                     style.textContent = `
-            tr:first-child td, tr:first-child th {
-                padding-top: 15px;
-            }
-            #favorisContainer {
-                padding: 0;
-            }
-            .a-tab-content {
-                border-radius: 0 0 8px 8px;
-            }
-        `;
+    tr:first-child td, tr:first-child th {
+        padding-top: 15px;
+    }
+    #favorisContainer {
+        padding: 0;
+    }
+    .a-tab-content {
+        border-radius: 0 0 8px 8px;
+    }
+    .vvp-orders-table--action-btn {
+        display: block; /* Les boutons l'un au-dessus de l'autre */
+        margin-bottom: 10px; /* Espacement entre les boutons */
+    }
+    #triLastSeen {
+        text-decoration: none; /* Supprimer le soulignement */
+        color: inherit; /* Lien sans surbrillance */
+        display: inline-flex; /* Pour aligner les flèches à côté du texte */
+        align-items: center;
+    }
+    #triLastSeen::after {
+        content: ' ⇅';
+        margin-left: 5px;
+    }
+    .vvp-orders-table--heading-top {
+       display: flex;
+       justify-content: flex-start; /* Aligner les boutons à gauche */
+       align-items: center;
+    }
+    .button-container-fav {
+      display: flex; /* Aligner les boutons côte à côte */
+      gap: 5px; /* Petit espace entre les boutons */
+    }
+
+    .vvp-orders-table--heading-row > th[colspan] {
+     text-align: center !important;
+    }
+    .vvp-orders-table--heading-row {
+      display: table-row !important;
+    }
+    #favorisContainer .a-box.a-tab-content > .a-box-inner {
+      padding: 0 !important;
+    }
+`;
                     document.head.appendChild(style);
+
+                    //Flag pour gérer l'inversion du tri
+                    let isTriInverse = inverseSortFav;
 
                     //Fonction pour afficher les favoris
                     async function afficherFavoris() {
@@ -8651,11 +8733,16 @@ ${isPlus && apiOk ? `
 
                         await Promise.all(promises);
 
-                        //Trier les favoris : ceux avec timeDiff = 0 en premier, puis par timeDiff croissant
+                        //Appliquer le tri en fonction de `isTriInverse`
                         favoris.sort((a, b) => {
                             if (a.timeDiff === 0) return -1;
                             if (b.timeDiff === 0) return 1;
-                            return a.timeDiff - b.timeDiff;
+
+                            if (isTriInverse) {
+                                return b.timeDiff - a.timeDiff; //Tri inversé : du plus vieux au plus récent
+                            } else {
+                                return a.timeDiff - b.timeDiff; //Tri normal : du plus récent au plus vieux
+                            }
                         });
 
                         //Limiter les favoris à MAX_fS
@@ -8664,80 +8751,58 @@ ${isPlus && apiOk ? `
                         //Mettre à jour le titre avec le nombre de favoris affichés
                         document.querySelector('#favorisCount').textContent = `Favoris (${favorisAffiches.length})`;
 
-                        //Fonction pour convertir une date européenne en format de date interprétable
-                        function parseEuropeanDate(dateStr) {
-                            const [day, month, year, hours, minutes, seconds] = dateStr.split(/[/ :]/);
-                            return new Date(`${year}-${month}-${day}T${hours}:${minutes}:${seconds}`);
-                        }
-
                         //Afficher les favoris triés
                         favorisAffiches.forEach(({ asin, key, productInfo, timeDiff }) => {
                             const tr = document.createElement('tr');
                             tr.className = 'vvp-orders-table--row';
                             const urlProduct = "https://www.amazon.fr/dp/" + asin;
                             const fallbackImage = baseUrlPickme + '/img/Pas-d-image-disponible-svg.png';
-                            if (productInfo == "ASIN absent") {
-                                tr.innerHTML = `
-                        <td class="vvp-orders-table--image-col"><img alt="${asin}" src="${fallbackImage}"></td>
-                        <td class="vvp-orders-table--text-col"><a class="a-link-normal" target="_blank" rel="noopener" href="${urlProduct}">Recommandation ou produit inconnu : ${asin}</a></td>
-                        <td class="vvp-orders-table--text-col"><strong>N/A</strong></td>
-                        <td class="vvp-orders-table--actions-col"><span class="a-button a-button-primary vvp-orders-table--action-btn" style="margin-left: 10px; margin-right: 10px;"><span class="a-button-inner"><button data-key="${key}" class="a-button-input supprimerFavori" aria-labelledby="supprimer-${key}">Supprimer</button><span class="a-button-text" aria-hidden="true" id="supprimer-${key}">Supprimer</span></span></span></td>
-                    `;
-                            } else if (!productInfo.main_image && productInfo.title) {
-                                tr.innerHTML = `
-                        <td class="vvp-orders-table--image-col"><img alt="${asin}" src="${fallbackImage}"></td>
-                        <td class="vvp-orders-table--text-col"><a class="a-link-normal" target="_blank" rel="noopener" href="${urlProduct}">Produit indisponible : ${productInfo.title}</a></td>
-                        <td class="vvp-orders-table--text-col"><strong>N/A</strong></td>
-                        <td class="vvp-orders-table--actions-col"><span class="a-button a-button-primary vvp-orders-table--action-btn" style="margin-left: 10px; margin-right: 10px;"><span class="a-button-inner"><button data-key="${key}" class="a-button-input supprimerFavori" aria-labelledby="supprimer-${key}">Supprimer</button><span class="a-button-text" aria-hidden="true" id="supprimer-${key}">Supprimer</span></span></span></td>
-                    `;
-                            } else if (productInfo.title) {
-                                //Vérifier la date et appliquer la couleur appropriée
-                                let dateColor = '';
+                            let dateColor = '';
+                            const hoursDiff = timeDiff / (1000 * 60 * 60);
+                            const minutesDiff = timeDiff / (1000 * 60);
 
-                                const hoursDiff = timeDiff / (1000 * 60 * 60);
-                                const minutesDiff = timeDiff / (1000 * 60);
-
-                                if (hoursDiff > parseFloat(favOld)) {
-                                    if (colorblindEnabled) {
-                                        dateColor = 'color: #E78AC3;'; //Rose magenta (alerte)
-                                    } else {
-                                        dateColor = 'color: #FF0000;'; //Rouge (alerte)
-                                    }
-                                } else if (minutesDiff < parseFloat(favNew)) {
-                                    if (colorblindEnabled) {
-                                        dateColor = 'color: #A6D854;'; //Vert clair/jaune-vert (activité récente)
-                                    } else {
-                                        dateColor = 'color: #007FFF;'; //Bleu (activité récente)
-                                    }
+                            // Appliquer les couleurs
+                            if (hoursDiff > parseFloat(favOld)) {
+                                if (colorblindEnabled) {
+                                    dateColor = 'color: #E78AC3;'; //Rose magenta (alerte)
+                                } else {
+                                    dateColor = 'color: #FF0000;'; //Rouge (alerte)
                                 }
-                                tr.innerHTML = `
-    <td class="vvp-orders-table--image-col">
-        <img
-            alt="${productInfo.title}"
-            src="${productInfo.main_image}"
-            onerror="this.onerror=null;this.src='${fallbackImage}'">
-    </td>
-    <td class="vvp-orders-table--text-col">
-        <a class="a-link-normal" target="_blank" rel="noopener" href="${urlProduct}">
-            ${productInfo.title}
-        </a>
-    </td>
-    <td class="vvp-orders-table--text-col" style="${dateColor}">
-        <strong>${productInfo.date_last_eu}</strong><br>
-        <a class="a-link-normal" target="_blank" rel="noopener" href="${productInfo.linkUrl}">
-            ${productInfo.linkText}
-        </a>
-    </td>
-    <td class="vvp-orders-table--actions-col">
-        <span class="a-button a-button-primary vvp-orders-table--action-btn" style="margin-left: 10px; margin-right: 10px;">
-            <span class="a-button-inner">
-                <button data-key="${key}" class="a-button-input supprimerFavori" aria-labelledby="supprimer-${key}">Supprimer</button>
-                <span class="a-button-text" aria-hidden="true" id="supprimer-${key}">Supprimer</span>
-            </span>
-        </span>
-    </td>
-`;
+                            } else if (minutesDiff < parseFloat(favNew)) {
+                                if (colorblindEnabled) {
+                                    dateColor = 'color: #A6D854;'; //Vert clair/jaune-vert (activité récente)
+                                } else {
+                                    dateColor = 'color: #007FFF;'; //Bleu (activité récente)
+                                }
                             }
+
+                            tr.innerHTML = `
+                    <td class="vvp-orders-table--image-col">
+                        <img
+                            alt="${productInfo.title}"
+                            src="${productInfo.main_image}"
+                            onerror="this.onerror=null;this.src='${fallbackImage}'">
+                    </td>
+                    <td class="vvp-orders-table--text-col">
+                        <a class="a-link-normal" target="_blank" rel="noopener" href="${urlProduct}">
+                            ${productInfo.title}
+                        </a>
+                    </td>
+                    <td class="vvp-orders-table--text-col" style="${dateColor}">
+                        <strong>${productInfo.date_last_eu}</strong><br>
+                        <a class="a-link-normal" target="_blank" rel="noopener" href="${productInfo.linkUrl}">
+                            ${productInfo.linkText}
+                        </a>
+                    </td>
+                    <td class="vvp-orders-table--actions-col">
+                        <span class="a-button a-button-primary vvp-orders-table--action-btn" style="margin-left: 10px; margin-right: 10px;">
+                            <span class="a-button-inner">
+                                <button data-key="${key}" class="a-button-input supprimerFavori" aria-labelledby="supprimer-${key}">Supprimer</button>
+                                <span class="a-button-text" aria-hidden="true" id="supprimer-${key}">Supprimer</span>
+                            </span>
+                        </span>
+                    </td>
+                `;
                             favorisList.appendChild(tr);
                         });
                         ordersPostCmd(listASINS, "fav");
@@ -8769,8 +8834,33 @@ ${isPlus && apiOk ? `
                         }
                     }
 
+                    //Fonction pour supprimer les favoris rouge
+                    function supprimerFavorisColories() {
+                        if (confirm('Êtes-vous sûr de vouloir supprimer les anciens favoris (date en rouge) ?')) {
+                            const favorisList = document.getElementById('favorisList');
+                            const favorisRows = favorisList.querySelectorAll('tr');
+
+                            favorisRows.forEach(row => {
+                                const dateCell = row.querySelector('td:nth-child(3)'); // La cellule avec la date
+                                const style = window.getComputedStyle(dateCell);
+                                const color = style.color;
+
+                                //Supprimer le favori si la couleur est rouge
+                                if (color === 'rgb(255, 0, 0)') { //"rgb(255, 0, 0)" correspond à #FF0000
+                                    const key = row.querySelector('button').getAttribute('data-key');
+                                    localStorage.removeItem(key);
+                                    row.remove(); //Supprimer la ligne de la table
+                                }
+                            });
+                            afficherFavoris(); //Recalculer et réafficher les favoris
+                        }
+                    }
+
                     //Ajouter le gestionnaire d'événement pour le bouton "Supprimer tous les favoris"
                     document.getElementById('supprimerTousFavoris').addEventListener('click', supprimerTousLesFavoris);
+
+                    //Ajouter le gestionnaire d'événement pour le bouton "Supprimer les favoris colorés"
+                    document.getElementById('supprimerFavorisColories').addEventListener('click', supprimerFavorisColories);
 
                     //Afficher le conteneur des favoris lors du clic sur le nouvel onglet
                     document.getElementById('favorisTab').addEventListener('click', function() {
@@ -8784,6 +8874,12 @@ ${isPlus && apiOk ? `
                         });
                         container.style.display = 'block';
                         afficherFavoris();
+                    });
+
+                    //Ajouter la fonctionnalité de tri inverse
+                    document.getElementById('triLastSeen').addEventListener('click', function() {
+                        isTriInverse = !isTriInverse;
+                        afficherFavoris(); //Re-afficher la liste avec l'ordre trié
                     });
                 }
             }
@@ -9740,8 +9836,10 @@ ${isPlus && apiOk ? `
 
             //Pour afficher les commandes réussies ou non dans la liste des commandes
             async function showOrdersCmd(data, tab = "orders") {
+                var favTab = false;
                 if (tab == "fav") {
                     tab = "orders";
+                    favTab = true;
                 }
                 const items = document.querySelectorAll('.vvp-' + tab + '-table--row');
                 if (items.length === 0) return;
@@ -9800,7 +9898,10 @@ ${isPlus && apiOk ? `
                         error: ballUrlError
                     };
 
-                    const topValue = '70px';
+                    var topValue = '70px';
+                    if (favTab) {
+                        topValue = '70%';
+                    }
                     const positions = `top: ${topValue};`;
                     const iconSize = '28px';
                     const fontSize = '14px';
@@ -10559,10 +10660,12 @@ ${isPlus && apiOk ? `
                 const valeurQueue = ${JSON.stringify(valeurQueue)};
                 const ordersEnabled = ${JSON.stringify(ordersEnabled)};
                 const wheelfixEnabled = ${JSON.stringify(wheelfixEnabled)};
+                const wheelfixManualEnabled = ${JSON.stringify(wheelfixManualEnabled)};
                 const oldCheckoutEnabled = ${JSON.stringify(oldCheckoutEnabled)};
                 const checkoutNewTab = ${JSON.stringify(checkoutNewTab)};
                 const checkoutEnabled = ${JSON.stringify(checkoutEnabled)};
                 const baseUrlPickme = ${JSON.stringify(baseUrlPickme)};
+                const isMobile = ${JSON.stringify(isMobile())};
                 const origFetch = window.fetch;
                 var lastParentVariant = null;
                 var responseData = {};
@@ -10742,141 +10845,8 @@ ${isPlus && apiOk ? `
 			                responseData.result.asinTangoEligible = false; //Force le checkout d'avant
 	                    }
 
+                        let fixed = 0;
                         if (wheelfixEnabled) {
-                            let fixed = 0;
-                            //Fix automatique du fix qu'on peut faire à la main
-                            /*let timeoutId = setTimeout(function() {
-                                var spinner = document.querySelector('.a-spinner.a-spinner-medium');
-                                if (spinner) {
-                                    let parent = spinner.parentNode;
-                                    spinner.remove();
-
-                                    var modalWrapper = document.getElementById('vvp-product-details-modal--spinner');
-
-                                    var container = document.createElement('div');
-                                    container.style.textAlign = 'center';
-                                    modalWrapper.appendChild(container);
-
-                                    //Créer le texte du titre
-                                    var title = document.createElement('p');
-                                    title.textContent = 'PickMe Fix';
-                                    title.style.fontSize = '24px';
-                                    title.style.fontWeight = 'bold';
-                                    title.style.marginBottom = '10px';
-                                    title.style.textAlign = 'center';
-                                    title.style.fontFamily = 'Arial, sans-serif';
-                                    container.appendChild(title);
-
-                                    //Créer le texte explicatif sous le titre
-                                    var explanationText = document.createElement('p');
-                                    explanationText.textContent = "Pour corriger ce produit, il faut choisir la variation souhaitée et cliquer sur le bouton 'Corriger ce produit'. Il suffit ensuite d'ouvrir à nouveau les détails du produit pour le commander.";
-                                    explanationText.style.fontSize = '14px';
-                                    explanationText.style.marginBottom = '20px';
-                                    explanationText.style.textAlign = 'center';
-                                    explanationText.style.lineHeight = '1.5';
-                                    container.appendChild(explanationText);
-
-                                    //Créer la liste déroulante
-                                    var select = document.createElement('select');
-                                    select.style.marginBottom = '15px';
-                                    container.appendChild(select);
-
-                                    //Parcourir les variations pour les ajouter à la liste
-                                    result.variations.forEach(function(variation) {
-                                        var option = document.createElement('option');
-                                        option.value = variation.asin;
-                                        option.textContent = Object.values(variation.dimensions).join(', ');
-                                        select.appendChild(option);
-                                    });
-
-                                    //Créer le bouton sous la liste
-                                    var buttonWrapper = document.createElement('span');
-                                    buttonWrapper.className = "a-declarative";
-                                    buttonWrapper.setAttribute("data-action", "vvp-hide-modal");
-                                    buttonWrapper.setAttribute("data-csa-c-type", "widget");
-                                    buttonWrapper.setAttribute("data-csa-c-func-deps", "aui-da-vvp-hide-modal");
-                                    buttonWrapper.setAttribute("data-vvp-hide-modal", "{}");
-
-                                    var button = document.createElement('span');
-                                    button.className = "a-button a-button-primary";
-
-                                    var buttonInner = document.createElement('span');
-                                    buttonInner.className = "a-button-inner";
-
-                                    var buttonInput = document.createElement('input');
-                                    buttonInput.className = "a-button-input";
-                                    buttonInput.type = "submit";
-                                    buttonInput.setAttribute("aria-labelledby", "vvp-product-details-modal--back-btn-announce");
-
-                                    var buttonText = document.createElement('span');
-                                    buttonText.className = "a-button-text";
-                                    buttonText.id = "vvp-product-details-modal--back-btn-announce";
-                                    buttonText.textContent = "Corriger ce produit";
-
-                                    //Assembler le bouton
-                                    buttonInner.appendChild(buttonInput);
-                                    buttonInner.appendChild(buttonText);
-                                    button.appendChild(buttonInner);
-                                    buttonWrapper.appendChild(button);
-
-                                    //Ajouter un retour à la ligne pour le bouton
-                                    var br = document.createElement('br');
-                                    container.appendChild(br);
-
-                                    container.appendChild(buttonWrapper);
-
-                                    //Sélectionner les boutons
-                                    const backButton = document.querySelector('#vvp-product-details-modal--back-btn');
-                                    const closeButton = document.querySelector('button.a-button-close');
-
-                                    //Fonction qui supprime le contenu de modalWrapper
-                                    function clearModalContent() {
-                                        //Supprimer tout ce qu'on a ajouté comme texte ou menu déroulant
-                                        while (modalWrapper.firstChild) {
-                                            modalWrapper.removeChild(modalWrapper.firstChild);
-                                        }
-
-                                        //Supprimer les écouteurs pour éviter que cela ne se refasse
-                                        backButton.removeEventListener('click', clearModalContent);
-                                        closeButton.removeEventListener('click', clearModalContent);
-                                        parent.appendChild(spinner);
-                                        //Annuler le timer en cours
-                                        clearTimeout(timeoutId);
-                                    }
-
-                                    //Ajouter un écouteur d'événement sur les deux boutons
-                                    backButton.addEventListener('click', clearModalContent);
-                                    closeButton.addEventListener('click', clearModalContent);
-
-                                    //Ajouter l'événement de clic au bouton
-                                    buttonInput.addEventListener('click', function() {
-                                        showMagicStars();
-                                        var recommendationId = result.recommendationId;
-                                        var selectedAsin = select.value;
-                                        var recommendationInputs = document.querySelectorAll('input[data-recommendation-id]');
-                                        recommendationInputs.forEach(function(input) {
-                                            if (input.getAttribute('data-recommendation-id') === recommendationId) {
-                                                input.setAttribute('data-asin', selectedAsin);
-                                                input.setAttribute('data-is-parent-asin', 'false');
-                                                input.setAttribute('data-recommendation-id', recommendationId);
-                                            }
-                                        });
-
-                                        //Supprimer tout ce qu'on a ajouté comme texte ou menu déroulant
-                                        while (modalWrapper.firstChild) {
-                                            modalWrapper.removeChild(modalWrapper.firstChild);
-                                        }
-
-                                        //Simuler le clic sur le bouton "Retour" pour fermer le modal
-                                        var returnButton = document.querySelector('[data-action="vvp-hide-modal"]');
-                                        if (returnButton) {
-                                            returnButton.click();
-                                        }
-                                        parent.appendChild(spinner);
-                                    });
-                                }
-                            }, 3000); //3000 millisecondes = 3 secondes*/
-
                             result.variations = result.variations?.map((variation) => {
                                 if (Object.keys(variation.dimensions || {}).length === 0) {
                                     variation.dimensions = {
@@ -10888,7 +10858,7 @@ ${isPlus && apiOk ? `
 
                                 for (const key in variation.dimensions) {
                                     //Sauvegarder la valeur d'origine
-                                    let originalValue = variation.dimensions[key]; //
+                                    let originalValue = variation.dimensions[key];
 
                                     //Échapper les caractères spéciaux
                                     variation.dimensions[key] = variation.dimensions[key]
@@ -10922,6 +10892,253 @@ ${isPlus && apiOk ? `
 
                                 return variation;
                             });
+
+								if (wheelfixManualEnabled) {
+									(function () {
+										//1) Cibles principales
+										var modalWrapper = document.getElementById(isMobile ? 'product-details-sheet-spinner'
+																				   : 'vvp-product-details-modal--spinner');
+										var modalMainId = isMobile ? 'product-details-sheet-main' : 'vvp-product-details-modal--main';
+
+										//Rien à faire si on n'a pas de wrapper où afficher le fallback
+										if (!modalWrapper) return;
+
+										// Spinner : on cherche en priorité à l'intérieur du wrapper, sinon globalement
+										var spinner = modalWrapper.querySelector('.a-spinner') ||
+											document.querySelector('.a-spinner.a-spinner-medium');
+
+										//2) Nettoyage défensif (au cas où un ancien run aurait laissé des traces)
+										cleanupFixUI();
+										restoreSpinnerIfManaged();
+
+										//3) Annule un éventuel timer existant puis programme le fallback
+										if (window.__pmfTimeoutId) {
+											clearTimeout(window.__pmfTimeoutId);
+											window.__pmfTimeoutId = null;
+										}
+
+										window.__pmfTimeoutId = setTimeout(function () {
+											//Si un autre code a annulé entre-temps, on sort
+											if (!window.__pmfTimeoutId) return;
+											// On invalide pour éviter tout double déclenchement
+											window.__pmfTimeoutId = null;
+
+											var modalMain = document.getElementById(modalMainId);
+											var shouldRunFallback = !isElementVisible(modalMain);
+
+											if (!shouldRunFallback) {
+												// Le modal est bien visible : on ne fait rien.
+												// On s’assure juste qu’aucune trace de notre UI n’existe.
+												cleanupFixUI();
+												return;
+											}
+
+											//4) Le modal n'est pas visible -> on masque le spinner et on affiche notre UI
+											hideSpinnerSafely();
+
+											var container = buildFixUI();
+											modalWrapper.appendChild(container);
+
+											var backButton =
+												document.querySelector(isMobile ? '[data-action="vvp-hide-sheet"]' : '[data-action="vvp-hide-modal"]') ||
+												document.getElementById(isMobile ? 'product-details-sheet-back-btn' : 'vvp-product-details-modal--back-btn');
+
+											var modalRoot = modalWrapper.closest('[role="dialog"], .a-sheet, .a-modal') || document;
+											var closeButton = modalRoot.querySelector(
+												'button.a-button-close, button.a-sheet-close, .a-sheet-close, .a-sheet-close-icon'
+											);
+
+											function clearAll() {
+												cleanupFixUI();
+												restoreSpinnerIfManaged();
+
+												if (window.__pmfTimeoutId) {
+													clearTimeout(window.__pmfTimeoutId);
+													window.__pmfTimeoutId = null;
+												}
+
+												if (backButton && backButton.removeEventListener) backButton.removeEventListener('click', clearAll);
+												if (closeButton && closeButton.removeEventListener) closeButton.removeEventListener('click', clearAll);
+											}
+
+											if (backButton && backButton.addEventListener) backButton.addEventListener('click', clearAll, { once: true });
+											if (closeButton && closeButton.addEventListener) closeButton.addEventListener('click', clearAll, { once: true });
+										}, 5000);
+
+										function isElementVisible(el) {
+											if (!el) return false;
+											var cs = window.getComputedStyle(el);
+											if (cs.display === 'none' || cs.visibility === 'hidden' || el.hidden) return false;
+											if (el.getAttribute && el.getAttribute('aria-hidden') === 'true') return false;
+											if (typeof el.getClientRects === 'function' && el.getClientRects().length === 0) return false;
+											return true;
+										}
+
+										function cleanupFixUI() {
+											//Supprime toutes les occurrences éventuelles de notre UI
+											document.querySelectorAll('#pickme-fix').forEach(function (n) { n.remove(); });
+										}
+
+										function hideSpinnerSafely() {
+											if (!spinner) return;
+											//Ne stocke l'état que si ce n'est pas déjà fait par nous
+											if (!spinner.dataset.pmfManaged) {
+												spinner.dataset.pmfPrevDisplay = spinner.style.display || '';
+												spinner.dataset.pmfHadAokHidden = spinner.classList.contains('aok-hidden') ? '1' : '0';
+												spinner.dataset.pmfManaged = '1';
+											}
+											spinner.classList.add('aok-hidden');
+											spinner.style.display = 'none';
+										}
+
+										function restoreSpinnerIfManaged() {
+											if (!spinner) return;
+											//On ne restaure que si nous l'avions géré
+											var managed = spinner.dataset.pmfManaged === '1' ||
+												'pmfPrevDisplay' in spinner.dataset ||
+												'pmfHadAokHidden' in spinner.dataset;
+
+											if (!managed) return;
+
+											var prev = spinner.dataset.pmfPrevDisplay;
+											if (typeof prev !== 'undefined') {
+												// Si on avait stocké un display inline précédent
+												if (prev) {
+													spinner.style.display = prev;
+												} else {
+													spinner.style.removeProperty('display');
+												}
+											} else {
+												spinner.style.removeProperty('display');
+											}
+
+											//Restaure la classe aok-hidden à l’état précédent
+											if (spinner.dataset.pmfHadAokHidden === '1') {
+												spinner.classList.add('aok-hidden');
+											} else {
+												spinner.classList.remove('aok-hidden');
+											}
+
+											//Nettoyage des traces
+											delete spinner.dataset.pmfPrevDisplay;
+											delete spinner.dataset.pmfHadAokHidden;
+											delete spinner.dataset.pmfManaged;
+										}
+
+										function buildFixUI() {
+											//Conteneur principal
+											var container = document.createElement('div');
+											container.id = 'pickme-fix';
+											container.className = 'pickme-ui';
+											container.style.textAlign = 'center';
+
+											//Titre
+											var title = document.createElement('p');
+											title.textContent = 'PickMe Fix';
+											title.style.fontSize = '24px';
+											title.style.fontWeight = 'bold';
+											title.style.marginBottom = '10px';
+											title.style.textAlign = 'center';
+											title.style.fontFamily = 'Arial, sans-serif';
+											container.appendChild(title);
+
+											//Explication
+											var explanationText = document.createElement('p');
+											explanationText.textContent = "Pour corriger ce produit, vous pouvez sélectionner la variation souhaitée et cliquer sur le bouton 'Corriger ce produit'. Il suffit ensuite d'ouvrir à nouveau les détails du produit pour le commander.";
+											explanationText.style.fontSize = '14px';
+											explanationText.style.marginBottom = '20px';
+											explanationText.style.textAlign = 'center';
+											explanationText.style.lineHeight = '1.5';
+											container.appendChild(explanationText);
+
+											//Select des variations
+											var select = document.createElement('select');
+											select.style.marginBottom = '15px';
+											container.appendChild(select);
+
+											(result.variations || [])
+											// Copie pour ne pas modifier l'original
+												.slice()
+												.sort(function (a, b) {
+												var la = Object.values(a.dimensions || {}).join(', ');
+												var lb = Object.values(b.dimensions || {}).join(', ');
+												return la.localeCompare(lb, 'fr', { sensitivity: 'base', numeric: true });
+											})
+												.forEach(function (variation) {
+												var option = document.createElement('option');
+												option.value = variation.asin;
+												option.textContent = Object.values(variation.dimensions || {}).join(', ');
+												select.appendChild(option);
+											});
+
+
+											//Bouton (markup Amazon-like mais sans ID en doublon)
+											var buttonWrapper = document.createElement('span');
+											buttonWrapper.className = 'a-declarative';
+											buttonWrapper.setAttribute('data-action', isMobile ? 'vvp-hide-sheet' : 'vvp-hide-modal');
+											buttonWrapper.setAttribute('data-csa-c-type', 'widget');
+											buttonWrapper.setAttribute('data-csa-c-func-deps', 'aui-da-vvp-hide-modal');
+											buttonWrapper.setAttribute(isMobile ? 'data-vvp-hide-sheet' : 'data-vvp-hide-modal', '{}');
+
+											var button = document.createElement('span');
+											button.className = 'a-button a-button-primary';
+
+											var buttonInner = document.createElement('span');
+											buttonInner.className = 'a-button-inner';
+
+											var buttonInput = document.createElement('input');
+											buttonInput.className = 'a-button-input';
+											buttonInput.type = 'submit';
+
+											var labelId = 'pmf-fix-btn-announce-' + Date.now();
+											buttonInput.setAttribute('aria-labelledby', labelId);
+
+											var buttonText = document.createElement('span');
+											buttonText.className = 'a-button-text';
+											buttonText.id = labelId;
+											buttonText.textContent = 'Corriger ce produit';
+
+											buttonInner.appendChild(buttonInput);
+											buttonInner.appendChild(buttonText);
+											button.appendChild(buttonInner);
+											buttonWrapper.appendChild(button);
+
+											container.appendChild(document.createElement('br'));
+											container.appendChild(buttonWrapper);
+
+											//Clic du bouton Corriger
+											buttonInput.addEventListener('click', function () {
+												showMagicStars();
+
+												var recommendationId = result.recommendationId;
+												var selectedAsin = select.value;
+
+												var recommendationInputs = document.querySelectorAll('input[data-recommendation-id]');
+												recommendationInputs.forEach(function (input) {
+													if (input.getAttribute('data-recommendation-id') === recommendationId) {
+														input.setAttribute('data-asin', selectedAsin);
+														input.setAttribute('data-is-parent-asin', 'false');
+														input.setAttribute('data-recommendation-id', recommendationId);
+													}
+												});
+
+												//Nettoyage + fermeture du modal natif si possible
+												cleanupFixUI();
+												restoreSpinnerIfManaged();
+
+												var closeEl =
+													document.querySelector(isMobile ? '[data-action="vvp-hide-sheet"]' : '[data-action="vvp-hide-modal"]') ||
+													document.getElementById(isMobile ? 'product-details-sheet-back-btn' : 'vvp-product-details-modal--back-btn');
+
+												if (closeEl && typeof closeEl.click === 'function') {
+													closeEl.click();
+												}
+											});
+
+											return container;
+										}
+									})();
+								}
 
                             if (fixed > 0) {
                                 showMagicStars();
@@ -11923,7 +12140,7 @@ ${isPlus && apiOk ? `
 
                     const delayInput = document.createElement('input');
                     delayInput.type = 'number';
-                    delayInput.style.width = '50px';
+                    delayInput.style.width = '60px';
                     delayInput.style.textAlign = 'center';
                     delayContainer.appendChild(delayInput);
                     optionsContainer.appendChild(delayContainer);
@@ -11957,7 +12174,7 @@ ${isPlus && apiOk ? `
 
                     const randomDelayInput = document.createElement('input');
                     randomDelayInput.type = 'number';
-                    randomDelayInput.style.width = '50px';
+                    randomDelayInput.style.width = '60px';
                     randomDelayInput.style.textAlign = 'center';
                     randomDelayContainer.appendChild(randomDelayInput);
                     optionsContainer.appendChild(randomDelayContainer);
@@ -12197,7 +12414,7 @@ ${isPlus && apiOk ? `
                 container.style.alignItems = 'center';
                 container.style.gap = '5px';
 
-                const pauseButton = document.createElement('button');
+                let pauseButton = document.createElement('button');
                 pauseButton.style.padding = '0';
                 pauseButton.style.cursor = 'pointer';
                 pauseButton.style.border = 'none';
@@ -12208,6 +12425,7 @@ ${isPlus && apiOk ? `
                 pauseButton.style.justifyContent = 'center';
                 pauseButton.style.width = '40px';
                 pauseButton.style.height = '40px';
+                pauseButton.id = 'pauseButton';
                 //Si la ronde était en pause, on affiche l'icône "resume", sinon l'icône "pause"
                 pauseButton.innerHTML = isPaused
                     ? `<img src="${playIcon}" alt="Resume" style="height:32px; width:auto;">`
