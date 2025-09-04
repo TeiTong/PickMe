@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PickMe
 // @namespace    http://tampermonkey.net/
-// @version      3.1.0
+// @version      3.1.1
 // @description  Plugin d'aide à la navigation pour les membres du discord Amazon Vine FR : https://discord.gg/amazonvinefr
 // @author       Créateur/Codeur principal : MegaMan / Codeur secondaire : Sulff / Testeurs : Louise, JohnnyBGoody, L'avocat du Diable et Popato (+ du code de lelouch_di_britannia, FMaz008 et Thorvarium)
 // @match        https://www.amazon.fr/vine/vine-items
@@ -15,7 +15,7 @@
 // @match        https://www.amazon.fr/*
 // @match        https://pickme.alwaysdata.net/*
 // @match        https://vinepick.me/*
-// @exclude      https://www.amazon.fr/vine/vine-items?search=*
+// @match        https://www.amazon.fr/vine/vine-items?search=*
 // @icon         https://vinepick.me/img/PM-ICO-2.png
 // @updateURL    https://raw.githubusercontent.com/teitong/pickme/main/PickMe.user.js
 // @downloadURL  https://raw.githubusercontent.com/teitong/pickme/main/PickMe.user.js
@@ -260,6 +260,7 @@ NOTES:
         const excludedPatterns = [
             'https://www.amazon.fr/vine/vine-items',
             'https://www.amazon.fr/vine/vine-items?queue=*',
+            'https://www.amazon.fr/vine/vine-items?search=*',
             'https://www.amazon.fr/vine/vine-reviews*',
             'https://www.amazon.fr/vine/orders*',
             'https://www.amazon.fr/vine/account',
@@ -2150,9 +2151,10 @@ NOTES:
             document.addEventListener('keydown', function(e) {
                 const activeElement = document.activeElement; //Obtient l'élément actuellement en focus
                 const searchBox = document.getElementById('twotabsearchtextbox'); //L'élément du champ de recherche d'Amazon
+                const searchBoxVine = document.getElementById('vvp-search-text-input'); //Recherche vine
 
                 //Vérifie si l'élément en focus est le champ de recherche
-                if (activeElement === searchBox) {
+                if (activeElement === searchBox || activeElement === searchBoxVine) {
                     return; //Ignore le reste du code si le champ de recherche est en focus
                 }
 
@@ -3366,7 +3368,7 @@ body {
 }
 
 #vvp-search-text-input {
-  width: 100% !important;
+  width: 97% !important;
 }
 
 .a-tabs {
@@ -3934,7 +3936,7 @@ body {
 }
 
 #vvp-search-text-input {
-  width: 100% !important;
+  width: 97% !important;
 }
 
 .a-tabs {
@@ -4679,32 +4681,59 @@ li.a-last a span.larr {      /* Cible le span larr dans les li a-last */
                     document.getElementById('pauseButton').click();
                 }
 
-                //Durée maximale de l'ancienneté en millisecondes (ici: 1 jour)
-                const MAX_c_AGE = 24 * 60 * 60 * 1000;
+                // Durée maximale de l'ancienneté en millisecondes (ici : 1 heure)
+                const MAX_c_AGE = 60 * 60 * 1000; //1 h
 
                 //Fonction pour vérifier si une page est potentiellement chargée depuis un cache ancien
                 function isPageCachedOld() {
-                    //Récupère la date de dernière visite stockée
-                    const lastVisit = GM_getValue('lastVisit', null);
-                    const now = new Date().getTime();
+                    //Utilise MAX_c_AGE si défini, sinon défaut 1 h
+                    const MAX_AGE = (typeof MAX_c_AGE === 'number' && isFinite(MAX_c_AGE))
+                    ? MAX_c_AGE
+                    : 60 * 60 * 1000;
 
-                    if (lastVisit) {
-                        const lastVisitDate = new Date(lastVisit);
-                        const age = now - lastVisitDate.getTime();
+                    const now = Date.now();
 
-                        //Si l'âge est supérieur à MAX_c_AGE, on considère la page comme obsolète
-                        if (age > MAX_c_AGE) {
-                            GM_setValue('lastVisit', now);
-                            return true;
+                    //Clé par URL (normalisée) pour éviter qu'un autre onglet "rajeunisse" cette page
+                    function pageKey() {
+                        try {
+                            const u = new URL(location.href);
+                            u.hash = '';
+                            const drop = new Set(['gclid', 'fbclid']);
+                            for (const k of [...u.searchParams.keys()]) {
+                                if (k.toLowerCase().startsWith('utm_') || drop.has(k)) u.searchParams.delete(k);
+                            }
+                            const qs = u.searchParams.toString();
+                            return 'lastVisit:' + u.origin + u.pathname + (qs ? '?' + qs : '');
+                        } catch (e) {
+                            //Fallback simple si URL() indisponible
+                            return 'lastVisit:' + String(location.href).split('#')[0];
                         }
                     }
 
-                    //Met à jour la date de dernière visite
-                    GM_setValue('lastVisit', now);
+                    const key = pageKey();
+
+                    //Compat : si aucune valeur par URL, on lit l’ancienne clé globale 'lastVisit' une seule fois
+                    const legacy = Number(GM_getValue('lastVisit', 0)) || 0;
+                    const last = Number(GM_getValue(key, legacy)) || 0;
+
+                    //Détection navigation arrière / bfcache
+                    let fromHistory = false;
+                    try {
+                        const nav = performance.getEntriesByType && performance.getEntriesByType('navigation')[0];
+                        fromHistory = !!nav && nav.type === 'back_forward';
+                    } catch (_) {}
+
+                    //On met à jour immédiatement pour la prochaine visite
+                    GM_setValue(key, now);
+
+                    //TRUE = page "ancienne" (on évite d'exécuter le reste)
+                    if (fromHistory) return true;
+                    if (last && (now - last) > MAX_AGE) return true;
+
                     return false;
                 }
 
-                if (listElements.length > 0 && !isPageCachedOld()) {
+                if (listElements.length > 0 && !isPageCachedOld() && !window.location.href.includes("search=")) {
                     sendDatasToAPI(listElements)
                         .then(urlArray => {
                         //Si aucune URL nouvelle, on sort
@@ -5698,7 +5727,6 @@ select.btn-like {
                 const responsePlus = await verifyTokenPlus(API_TOKEN);
                 const responseReco = await verifyTokenReco(API_TOKEN);
                 const addressOptions = document.querySelectorAll('.vvp-address-option');
-                console.log(addressOptions);
                 let apiToken = "";
                 if (API_TOKEN == undefined) {
                     apiToken = "";
