@@ -3235,6 +3235,7 @@ NOTES:
   display: flex !important;
   align-items: center; !important;
   justify-content: flex-start !important;
+  font-size : 12px !important;
 }
 
 #vvp-header a.a-link-normal {
@@ -4126,6 +4127,7 @@ li.a-last a span.larr {      /* Cible le span larr dans les li a-last */
   display: flex !important;
   align-items: center; !important;
   justify-content: flex-start !important;
+  font-size : 12px !important;
 }
 
 #vvp-header a.a-link-normal {
