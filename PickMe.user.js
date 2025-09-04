@@ -3368,7 +3368,7 @@ body {
 }
 
 #vvp-search-text-input {
-  width: 97% !important;
+  width: 100% !important;
 }
 
 .a-tabs {
@@ -3936,7 +3936,7 @@ body {
 }
 
 #vvp-search-text-input {
-  width: 97% !important;
+  width: 100% !important;
 }
 
 .a-tabs {
