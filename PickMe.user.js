@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PickMe
 // @namespace    http://tampermonkey.net/
-// @version      3.1.1
+// @version      3.1.2
 // @description  Plugin d'aide à la navigation pour les membres du discord Amazon Vine FR : https://discord.gg/amazonvinefr
 // @author       Créateur/Codeur principal : MegaMan / Codeur secondaire : Sulff / Testeurs : Louise, JohnnyBGoody, L'avocat du Diable et Popato (+ du code de lelouch_di_britannia, FMaz008 et Thorvarium)
 // @match        https://www.amazon.fr/vine/vine-items
@@ -4698,42 +4698,67 @@ li.a-last a span.larr {      /* Cible le span larr dans les li a-last */
                         try {
                             const u = new URL(location.href);
                             u.hash = '';
+
+                            //Supprimer utm_*, gclid, fbclid
                             const drop = new Set(['gclid', 'fbclid']);
                             for (const k of [...u.searchParams.keys()]) {
-                                if (k.toLowerCase().startsWith('utm_') || drop.has(k)) u.searchParams.delete(k);
+                                if (k.toLowerCase().startsWith('utm_') || drop.has(k)) {
+                                    u.searchParams.delete(k);
+                                }
                             }
-                            const qs = u.searchParams.toString();
+
+                            //Tri des params restants pour une clé stable même si l'ordre change
+                            const sorted = new URLSearchParams(
+                                [...u.searchParams.entries()].sort(([a],[b]) => a.localeCompare(b))
+                            );
+                            const qs = sorted.toString();
+
                             return 'lastVisit:' + u.origin + u.pathname + (qs ? '?' + qs : '');
                         } catch (e) {
-                            //Fallback simple si URL() indisponible
+                            // Fallback simple si URL() indisponible
                             return 'lastVisit:' + String(location.href).split('#')[0];
                         }
                     }
 
                     const key = pageKey();
 
-                    //Compat : si aucune valeur par URL, on lit l’ancienne clé globale 'lastVisit' une seule fois
-                    const legacy = Number(GM_getValue('lastVisit', 0)) || 0;
-                    const last = Number(GM_getValue(key, legacy)) || 0;
-
                     //Détection navigation arrière / bfcache
                     let fromHistory = false;
                     try {
                         const nav = performance.getEntriesByType && performance.getEntriesByType('navigation')[0];
                         fromHistory = !!nav && nav.type === 'back_forward';
-                    } catch (_) {}
+                    } catch (_) {
+                        //Ancien fallback (déprécié) si jamais nécessaire
+                        try { fromHistory = performance.navigation && performance.navigation.type === 2; } catch(__) {}
+                    }
 
-                    //On met à jour immédiatement pour la prochaine visite
-                    GM_setValue(key, now);
+                    //Lire la valeur strictement par-URL, sans fallback legacy pour la décision
+                    const raw = (typeof GM_getValue === 'function') ? GM_getValue(key, 0) : 0;
+                    const last = Number(raw) || 0;
+
+                    //Mise à jour immédiate pour la prochaine visite
+                    if (typeof GM_setValue === 'function') GM_setValue(key, now);
+
+                    //Nettoyage one-shot de l’ancienne clé globale (optionnel, sûr)
+                    try {
+                        if (typeof GM_getValue === 'function' && typeof GM_deleteValue === 'function') {
+                            if (GM_getValue('lastVisit', null) !== null) GM_deleteValue('lastVisit');
+                        }
+                    } catch (_) {}
 
                     //TRUE = page "ancienne" (on évite d'exécuter le reste)
                     if (fromHistory) return true;
-                    if (last && (now - last) > MAX_AGE) return true;
 
-                    return false;
+                    //Page jamais vue pour cette URL => considéré "neuf"
+                    if (last === 0) return false;
+
+                    //Sinon, test d'ancienneté
+                    return (now - last) > MAX_AGE;
                 }
 
+
                 if (listElements.length > 0 && !isPageCachedOld() && !window.location.href.includes("search=")) {
+                    console.log("prout");
                     sendDatasToAPI(listElements)
                         .then(urlArray => {
                         //Si aucune URL nouvelle, on sort
@@ -4780,10 +4805,10 @@ li.a-last a span.larr {      /* Cible le span larr dans les li a-last */
                         .catch(err => {
                         console.error("Erreur API :", err);
                     });
+                }
 
-                    if (ordersInfos && ordersEnabled && window.location.href.startsWith("https://www.amazon.fr/vine/vine-items?queue=")) {
-                        ordersPost(listElementsOrder);
-                    }
+                if (listElements.length > 0 && ordersInfos && ordersEnabled && (window.location.href.startsWith("https://www.amazon.fr/vine/vine-items?queue=") || window.location.href.startsWith("https://www.amazon.fr/vine/vine-items?search="))) {
+                    ordersPost(listElementsOrder);
                 }
 
             });
