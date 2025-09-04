@@ -4758,7 +4758,6 @@ li.a-last a span.larr {      /* Cible le span larr dans les li a-last */
 
 
                 if (listElements.length > 0 && !isPageCachedOld() && !window.location.href.includes("search=")) {
-                    console.log("prout");
                     sendDatasToAPI(listElements)
                         .then(urlArray => {
                         //Si aucune URL nouvelle, on sort
