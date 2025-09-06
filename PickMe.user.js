@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PickMe
 // @namespace    http://tampermonkey.net/
-// @version      3.1.2
+// @version      3.1.3
 // @description  Plugin d'aide à la navigation pour les membres du discord Amazon Vine FR : https://discord.gg/amazonvinefr
 // @author       Créateur/Codeur principal : MegaMan / Codeur secondaire : Sulff / Testeurs : Louise, JohnnyBGoody, L'avocat du Diable et Popato (+ du code de lelouch_di_britannia, FMaz008 et Thorvarium)
 // @match        https://www.amazon.fr/vine/vine-items
@@ -26,7 +26,7 @@
 // @grant        GM_listValues
 // @run-at       document-start
 // @noframes
-// @require      https://raw.githubusercontent.com/teitong/reviewremember/main/ReviewRememberPM.user.js?v=1.9.4
+// @require      https://raw.githubusercontent.com/teitong/reviewremember/main/ReviewRememberPM.user.js?v=1.9.5
 // @require      https://vinepick.me/scripts/jquery-3.7.1.min.js
 // @require      https://vinepick.me/scripts/heic2any.min.js
 //==/UserScript==
@@ -4893,10 +4893,14 @@ li.a-last a span.larr {      /* Cible le span larr dans les li a-last */
                         categories.forEach(cat => {
                             const nomEl = cat.querySelector('#vvp-parent-node-row');
                             if (!nomEl) return;
-                            const match = nomEl.textContent.trim().match(/^(.+?)\s*\((\d+)\)$/);
-                            if (match) {
-                                const nom = match[1].trim();
-                                const nombre = parseInt(match[2], 10);
+                            const nomNode = Array.from(nomEl.childNodes)
+                            .find(node => node.nodeType === Node.TEXT_NODE && node.textContent.trim() !== '');
+                            const nom = nomNode ? nomNode.textContent.trim() : '';
+
+                            const nombreSpan = nomEl.querySelector('span');
+                            const nombre = nombreSpan ? parseInt(nombreSpan.textContent.trim().replace(/[()]/g, '').replace(/[\s\u00A0\u202F\u2009]/g, ''), 10) : 0;
+
+                            if (nom) {
                                 resultats[nom] = isNaN(nombre) ? 0 : nombre;
                             }
                         });
