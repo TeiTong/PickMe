@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PickMe
 // @namespace    http://tampermonkey.net/
-// @version      3.1.3
+// @version      3.1.4
 // @description  Plugin d'aide à la navigation pour les membres du discord Amazon Vine FR : https://discord.gg/amazonvinefr
 // @author       Créateur/Codeur principal : MegaMan / Codeur secondaire : Sulff / Testeurs : Louise, JohnnyBGoody, L'avocat du Diable et Popato (+ du code de lelouch_di_britannia, FMaz008 et Thorvarium)
 // @match        https://www.amazon.fr/vine/vine-items
@@ -4681,15 +4681,8 @@ li.a-last a span.larr {      /* Cible le span larr dans les li a-last */
                     document.getElementById('pauseButton').click();
                 }
 
-                // Durée maximale de l'ancienneté en millisecondes (ici : 1 heure)
-                const MAX_c_AGE = 60 * 60 * 1000; //1 h
-
                 //Fonction pour vérifier si une page est potentiellement chargée depuis un cache ancien
                 function isPageCachedOld() {
-                    //Utilise MAX_c_AGE si défini, sinon défaut 1 h
-                    const MAX_AGE = (typeof MAX_c_AGE === 'number' && isFinite(MAX_c_AGE))
-                    ? MAX_c_AGE
-                    : 60 * 60 * 1000;
 
                     const now = Date.now();
 
@@ -4732,10 +4725,6 @@ li.a-last a span.larr {      /* Cible le span larr dans les li a-last */
                         try { fromHistory = performance.navigation && performance.navigation.type === 2; } catch(__) {}
                     }
 
-                    //Lire la valeur strictement par-URL, sans fallback legacy pour la décision
-                    const raw = (typeof GM_getValue === 'function') ? GM_getValue(key, 0) : 0;
-                    const last = Number(raw) || 0;
-
                     //Mise à jour immédiate pour la prochaine visite
                     if (typeof GM_setValue === 'function') GM_setValue(key, now);
 
@@ -4746,16 +4735,9 @@ li.a-last a span.larr {      /* Cible le span larr dans les li a-last */
                         }
                     } catch (_) {}
 
-                    //TRUE = page "ancienne" (on évite d'exécuter le reste)
-                    if (fromHistory) return true;
-
-                    //Page jamais vue pour cette URL => considéré "neuf"
-                    if (last === 0) return false;
-
-                    //Sinon, test d'ancienneté
-                    return (now - last) > MAX_AGE;
+                    //TRUE = page chargée depuis l'historique (back/forward cache)
+                    return fromHistory;
                 }
-
 
                 if (listElements.length > 0 && !isPageCachedOld() && !window.location.href.includes("search=")) {
                     sendDatasToAPI(listElements)
