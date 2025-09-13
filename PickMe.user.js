@@ -10465,10 +10465,10 @@ ${addressOptions.length && isPlus && apiOk ? `
                 }
 
                 config = {
-                    characterData: false,
+                    characterData: true,
                     attributes: true,
-                    childList: false,
-                    subtree: false
+                    childList: true,
+                    subtree: true
                 };
 
                 //Mutation observer fires every time the product title in the modal changes
