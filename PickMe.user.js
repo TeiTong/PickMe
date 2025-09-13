@@ -10458,7 +10458,7 @@ ${addressOptions.length && isPlus && apiOk ? `
                 });
             });
 
-            window.addEventListener('load', function () {
+            function initDiscordShareButton() {
                 var observer, config, eltToWatch, currentTarget;
 
                 //Sur iOS, l'élément peut être entièrement remplacé ; on surveille
@@ -10615,7 +10615,13 @@ ${addressOptions.length && isPlus && apiOk ? `
                 }
             }*/
 
-            });
+            }
+
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', initDiscordShareButton);
+            } else {
+                initDiscordShareButton();
+            }
 
             //Wheel Fix
             if (apiOk) {
