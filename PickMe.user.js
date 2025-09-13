@@ -8503,8 +8503,14 @@ ${addressOptions.length && isPlus && apiOk ? `
                 modalElems[0].insertAdjacentHTML('afterbegin', discordBtn);
                 var productDetailsModal = modalElems[1] || modalElems[0]; //fallback si [1] n’existe pas
 
-                const resizeObserver = new ResizeObserver(updateButtonPosition);
-                resizeObserver.observe(productDetailsModal);
+                if (typeof ResizeObserver !== 'undefined') {
+                    const resizeObserver = new ResizeObserver(updateButtonPosition);
+                    resizeObserver.observe(productDetailsModal);
+                } else {
+                    //Fallback pour les navigateurs ne supportant pas ResizeObserver (ex: Safari iOS ancien)
+                    updateButtonPosition();
+                    window.addEventListener('resize', updateButtonPosition);
+                }
             }
 
             function updateButtonIcon(type) {
@@ -10453,26 +10459,19 @@ ${addressOptions.length && isPlus && apiOk ? `
             });
 
             window.addEventListener('load', function () {
-                var target, observer, config;
+                var observer, config, eltToWatch, currentTarget;
 
-                let eltToWatch = 'a#vvp-product-details-modal--product-title';
-                //On observe si on ouvre le détail d'un produit
-                target = document.querySelector(eltToWatch);
-                //Si pas trouvé (par exemple en version mobile)
-                if (!target) {
-                    eltToWatch = '#product-details-sheet-title';
-                    target = document.querySelector(eltToWatch);
-                }
-
+                //Sur iOS, l'élément peut être entièrement remplacé ; on surveille
+                //toutes les mutations possibles pour garantir l'apparition du bouton.
                 config = {
-                    characterData: false,
+                    characterData: true,
                     attributes: true,
-                    childList: false,
-                    subtree: false
+                    childList: true,
+                    subtree: true
                 };
 
-                //Mutation observer fires every time the product title in the modal changes
-                observer = new MutationObserver(function (mutations) {
+                //Fonction appelée à chaque changement du titre du produit
+                function mutationCallback() {
                     const prerelease = document.querySelector('#vvp-product-details-modal--product-title.prerelease-title') ||
                           document.querySelector('#product-details-sheet-title.prerelease-title');
                     if (prerelease) {
@@ -10499,7 +10498,7 @@ ${addressOptions.length && isPlus && apiOk ? `
                         return elem.style.display === 'none';
                     });
                     var wasPosted = GM_getValue("config")[parentAsin]?.queue;
-                    var isModalHidden = (document.querySelector(eltToWatch).style.visibility === 'hidden') ? true : false;
+                    var isModalHidden = (document.querySelector(eltToWatch)?.style.visibility === 'hidden') ? true : false;
 
                     if (hasError || queueType == null || queueType == "potluck" || window.location.href.includes('?search')) {
                         //Cacher le bouton si reco, reco ou autres
@@ -10522,14 +10521,32 @@ ${addressOptions.length && isPlus && apiOk ? `
                         //Mettre le focus sur le bouton "Envoyer à cette adresse"
                         observeShippingModal();
                     }
-                });
-
-                try {
-                    observer.observe(target, config);
-                } catch(error) {
-                    console.log('[PïckMe] Aucun produit sur cette page');
-                    displayContent();
                 }
+
+                observer = new MutationObserver(mutationCallback);
+
+                function attachToTitleIfNeeded() {
+                    // Le titre du produit peut être recréé dynamiquement dans le modal.
+                    // On recherche l'élément par son ID et on ré-attache l'observateur si nécessaire.
+                    let t = document.querySelector('#vvp-product-details-modal--product-title');
+                    eltToWatch = '#vvp-product-details-modal--product-title';
+                    if (!t) {
+                        t = document.querySelector('#product-details-sheet-title');
+                        eltToWatch = '#product-details-sheet-title';
+                    }
+                    if (t && t !== currentTarget) {
+                        observer.disconnect();
+                        currentTarget = t;
+                        observer.observe(currentTarget, config);
+                        mutationCallback();
+                    }
+                }
+
+                //Surveille en permanence l'apparition/disparition du titre du produit
+                const bodyObserver = new MutationObserver(attachToTitleIfNeeded);
+                bodyObserver.observe(document.body, { childList: true, subtree: true });
+
+                attachToTitleIfNeeded();
 
                 function focusButton(selector, timeout = 300) {
                     var button = document.querySelector(selector);
