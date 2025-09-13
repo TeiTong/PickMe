@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PickMe
 // @namespace    http://tampermonkey.net/
-// @version      3.1.4
+// @version      3.2.0
 // @description  Plugin d'aide à la navigation pour les membres du discord Amazon Vine FR : https://discord.gg/amazonvinefr
 // @author       Créateur/Codeur principal : MegaMan / Codeur secondaire : Sulff / Testeurs : Louise, JohnnyBGoody, L'avocat du Diable et Popato (+ du code de lelouch_di_britannia, FMaz008 et Thorvarium)
 // @match        https://www.amazon.fr/vine/vine-items
@@ -26,7 +26,7 @@
 // @grant        GM_listValues
 // @run-at       document-start
 // @noframes
-// @require      https://raw.githubusercontent.com/teitong/reviewremember/main/ReviewRememberPM.user.js?v=1.9.5
+// @require      https://raw.githubusercontent.com/teitong/reviewremember/main/ReviewRememberPM.user.js?v=1.9.7
 // @require      https://vinepick.me/scripts/jquery-3.7.1.min.js
 // @require      https://vinepick.me/scripts/heic2any.min.js
 //==/UserScript==
@@ -1551,6 +1551,8 @@ NOTES:
 
             let inverseSortFav = GM_getValue('inverseSortFav', false);
 
+            let zoomEnabled = GM_getValue('zoomEnabled', true);
+
             //Enregistrement des autres valeurs de configuration
             GM_setValue("highlightEnabled", highlightEnabled);
             GM_setValue("firsthlEnabled", firsthlEnabled);
@@ -1720,6 +1722,8 @@ NOTES:
             GM_setValue("showCheckout", showCheckout);
 
             GM_setValue("inverseSortFav", inverseSortFav);
+
+            GM_setValue("zoomEnabled", zoomEnabled);
 
             //Modification du texte pour l'affichage mobile
             var pageX = "Page X";
@@ -2349,6 +2353,72 @@ NOTES:
                 });
             }
 
+            //Affichage d'une image agrandie lors du clic sur un produit
+            function openImageOverlay(imgSrc) {
+                const largeSrc = imgSrc.replace(/_SS\d+_/, '_SS500_');
+                const overlay = document.createElement('div');
+                overlay.id = 'pm-image-overlay';
+                overlay.style.position = 'fixed';
+                overlay.style.top = '0';
+                overlay.style.left = '0';
+                overlay.style.width = '100%';
+                overlay.style.height = '100%';
+                overlay.style.backgroundColor = 'rgba(0,0,0,0.8)';
+                overlay.style.display = 'flex';
+                overlay.style.alignItems = 'center';
+                overlay.style.justifyContent = 'center';
+                overlay.style.zIndex = '10000';
+
+                const img = document.createElement('img');
+                img.src = largeSrc;
+                img.style.maxWidth = '90%';
+                img.style.maxHeight = '90%';
+
+                const closeBtn = document.createElement('span');
+                closeBtn.textContent = '✕';
+                closeBtn.style.position = 'absolute';
+                closeBtn.style.top = '20px';
+                closeBtn.style.right = '30px';
+                closeBtn.style.fontSize = '30px';
+                closeBtn.style.color = '#fff';
+                closeBtn.style.cursor = 'pointer';
+                closeBtn.addEventListener('click', () => overlay.remove());
+
+                overlay.appendChild(img);
+                overlay.appendChild(closeBtn);
+                overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+                document.body.appendChild(overlay);
+            }
+
+            //Rendre les images des produits cliquables pour les afficher en plus grand
+            function rendreImagesCliquables() {
+                if (zoomEnabled) {
+                    const selectors = [
+                        '.vvp-item-tile-content img:first-child', //AI, AFA, RFY
+                        '.vvp-orders-table--image-col img:first-child', //Commandes
+                        '.vvp-reviews-table--image-col img:first-child', //Avis
+                        '#favorisContainer .vvp-orders-table--image-col img:first-child' //Favoris
+                    ];
+
+                    selectors.forEach(sel => {
+                        document.querySelectorAll(sel).forEach(img => {
+                            if (img.dataset.pmClickable) return; //Évite de lier plusieurs fois
+                            img.style.cursor = 'zoom-in';
+                            img.addEventListener('click', () => openImageOverlay(img.src));
+                            img.dataset.pmClickable = 'true';
+                        });
+                    });
+                }
+            }
+
+            //Observer les changements du DOM pour rendre cliquables les nouvelles images
+            document.addEventListener('DOMContentLoaded', () => {
+                rendreImagesCliquables();
+                const observer = new MutationObserver(rendreImagesCliquables);
+                observer.observe(document.body, { childList: true, subtree: true });
+            });
+
             //Variable pour savoir s'il y a eu un nouvel objet
             var imgNew = false;
 
@@ -2524,6 +2594,7 @@ NOTES:
                         if (hideEnabled && autohideEnabled) {
                             ajouterIconeEtFonctionCacher();
                         }
+                        rendreImagesCliquables();
                     }
                     //On signifie que le script a fini son action la plus "longue" pour les actions de fin
                     allFinish = true;
@@ -2978,6 +3049,8 @@ NOTES:
                 //Appeler la fonction pour ajouter les étiquettes de temps
                 ajouterEtiquetteTemps();
             }
+
+            rendreImagesCliquables();
 
             //Suppression footer
             var styleFooter = document.createElement('style');
@@ -7449,6 +7522,7 @@ ${addressOptions.length && isPlus && apiOk ? `
                 ajouterOptionTexte('extendedDelay', 'Délai (en ms) pour afficher les noms complets des produits (à augmenter si l\'affichage du nom complet ne fonctionne pas', '600');
                 ajouterOptionCheckbox('taxValue', 'Remonter l\'affichage de la valeur fiscale estimée (et des variantes sur mobile)');
                 ajouterOptionCheckbox('isParentEnabled', 'Distinguer les produits ayant des variantes. Si c\'est le cas, cela ajoute l\'icone 🛍️ dans le texte du bouton des détails');
+                ajouterOptionCheckbox('zoomEnabled', 'Afficher l\'image du produit en plus grand si on clique dessus');
                 ajouterOptionCheckbox('notepadEnabled', 'Activer le Bloc-notes');
                 ajouterOptionCheckbox('wheelfixManualEnabled', 'Activer la correction universelle du chargement infini des produits');
                 ajouterOptionTexte('sizeMobileCat', 'Tailles des boutons de catégories (RFY, AFA, AI) en affichage mobile', '32px');
@@ -8503,14 +8577,8 @@ ${addressOptions.length && isPlus && apiOk ? `
                 modalElems[0].insertAdjacentHTML('afterbegin', discordBtn);
                 var productDetailsModal = modalElems[1] || modalElems[0]; //fallback si [1] n’existe pas
 
-                if (typeof ResizeObserver !== 'undefined') {
-                    const resizeObserver = new ResizeObserver(updateButtonPosition);
-                    resizeObserver.observe(productDetailsModal);
-                } else {
-                    //Fallback pour les navigateurs ne supportant pas ResizeObserver (ex: Safari iOS ancien)
-                    updateButtonPosition();
-                    window.addEventListener('resize', updateButtonPosition);
-                }
+                const resizeObserver = new ResizeObserver(updateButtonPosition);
+                resizeObserver.observe(productDetailsModal);
             }
 
             function updateButtonIcon(type) {
@@ -8864,6 +8932,8 @@ ${addressOptions.length && isPlus && apiOk ? `
                                 document.querySelector('#favorisCount').textContent = `Favoris (${nbFavorisRestants})`;
                             });
                         });
+                        //Rendre les images des favoris cliquables pour zoomer
+                        rendreImagesCliquables();
                     }
 
                     //Fonction pour supprimer tous les favoris
@@ -10458,20 +10528,27 @@ ${addressOptions.length && isPlus && apiOk ? `
                 });
             });
 
-            function initDiscordShareButton() {
-                var observer, config, eltToWatch, currentTarget;
+            window.addEventListener('load', function () {
+                var target, observer, config;
 
-                //Sur iOS, l'élément peut être entièrement remplacé ; on surveille
-                //toutes les mutations possibles pour garantir l'apparition du bouton.
+                let eltToWatch = 'a#vvp-product-details-modal--product-title';
+                //On observe si on ouvre le détail d'un produit
+                target = document.querySelector(eltToWatch);
+                //Si pas trouvé (par exemple en version mobile)
+                if (!target) {
+                    eltToWatch = '#product-details-sheet-title';
+                    target = document.querySelector(eltToWatch);
+                }
+
                 config = {
-                    characterData: true,
+                    characterData: false,
                     attributes: true,
-                    childList: true,
-                    subtree: true
+                    childList: false,
+                    subtree: false
                 };
 
-                //Fonction appelée à chaque changement du titre du produit
-                function mutationCallback() {
+                //Mutation observer fires every time the product title in the modal changes
+                observer = new MutationObserver(function (mutations) {
                     const prerelease = document.querySelector('#vvp-product-details-modal--product-title.prerelease-title') ||
                           document.querySelector('#product-details-sheet-title.prerelease-title');
                     if (prerelease) {
@@ -10498,7 +10575,7 @@ ${addressOptions.length && isPlus && apiOk ? `
                         return elem.style.display === 'none';
                     });
                     var wasPosted = GM_getValue("config")[parentAsin]?.queue;
-                    var isModalHidden = (document.querySelector(eltToWatch)?.style.visibility === 'hidden') ? true : false;
+                    var isModalHidden = (document.querySelector(eltToWatch).style.visibility === 'hidden') ? true : false;
 
                     if (hasError || queueType == null || queueType == "potluck" || window.location.href.includes('?search')) {
                         //Cacher le bouton si reco, reco ou autres
@@ -10521,32 +10598,14 @@ ${addressOptions.length && isPlus && apiOk ? `
                         //Mettre le focus sur le bouton "Envoyer à cette adresse"
                         observeShippingModal();
                     }
+                });
+
+                try {
+                    observer.observe(target, config);
+                } catch(error) {
+                    console.log('[PïckMe] Aucun produit sur cette page');
+                    displayContent();
                 }
-
-                observer = new MutationObserver(mutationCallback);
-
-                function attachToTitleIfNeeded() {
-                    // Le titre du produit peut être recréé dynamiquement dans le modal.
-                    // On recherche l'élément par son ID et on ré-attache l'observateur si nécessaire.
-                    let t = document.querySelector('#vvp-product-details-modal--product-title');
-                    eltToWatch = '#vvp-product-details-modal--product-title';
-                    if (!t) {
-                        t = document.querySelector('#product-details-sheet-title');
-                        eltToWatch = '#product-details-sheet-title';
-                    }
-                    if (t && t !== currentTarget) {
-                        observer.disconnect();
-                        currentTarget = t;
-                        observer.observe(currentTarget, config);
-                        mutationCallback();
-                    }
-                }
-
-                //Surveille en permanence l'apparition/disparition du titre du produit
-                const bodyObserver = new MutationObserver(attachToTitleIfNeeded);
-                bodyObserver.observe(document.body, { childList: true, subtree: true });
-
-                attachToTitleIfNeeded();
 
                 function focusButton(selector, timeout = 300) {
                     var button = document.querySelector(selector);
@@ -10615,13 +10674,7 @@ ${addressOptions.length && isPlus && apiOk ? `
                 }
             }*/
 
-            }
-
-            if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', initDiscordShareButton);
-            } else {
-                initDiscordShareButton();
-            }
+            });
 
             //Wheel Fix
             if (apiOk) {
