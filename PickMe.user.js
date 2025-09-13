@@ -10455,7 +10455,7 @@ ${addressOptions.length && isPlus && apiOk ? `
             window.addEventListener('load', function () {
                 var target, observer, config;
 
-                let eltToWatch = 'a#vvp-product-details-modal--product-title';
+                let eltToWatch = '#vvp-product-details-modal--product-title';
                 //On observe si on ouvre le détail d'un produit
                 target = document.querySelector(eltToWatch);
                 //Si pas trouvé (par exemple en version mobile)
