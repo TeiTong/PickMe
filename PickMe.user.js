@@ -10455,7 +10455,7 @@ ${addressOptions.length && isPlus && apiOk ? `
             window.addEventListener('load', function () {
                 var target, observer, config;
 
-                let eltToWatch = '#vvp-product-details-modal--product-title';
+                let eltToWatch = 'a#vvp-product-details-modal--product-title';
                 //On observe si on ouvre le détail d'un produit
                 target = document.querySelector(eltToWatch);
                 //Si pas trouvé (par exemple en version mobile)
@@ -10465,10 +10465,10 @@ ${addressOptions.length && isPlus && apiOk ? `
                 }
 
                 config = {
-                    characterData: true,
+                    characterData: false,
                     attributes: true,
-                    childList: true,
-                    subtree: true
+                    childList: false,
+                    subtree: false
                 };
 
                 //Mutation observer fires every time the product title in the modal changes
