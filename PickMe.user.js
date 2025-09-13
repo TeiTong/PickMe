@@ -10453,26 +10453,19 @@ ${addressOptions.length && isPlus && apiOk ? `
             });
 
             window.addEventListener('load', function () {
-                var target, observer, config;
+                var observer, config, eltToWatch;
 
-                let eltToWatch = 'a#vvp-product-details-modal--product-title';
-                //On observe si on ouvre le détail d'un produit
-                target = document.querySelector(eltToWatch);
-                //Si pas trouvé (par exemple en version mobile)
-                if (!target) {
-                    eltToWatch = '#product-details-sheet-title';
-                    target = document.querySelector(eltToWatch);
-                }
-
+                //Sur iOS, l'élément peut être entièrement remplacé ; on surveille
+                //toutes les mutations possibles pour garantir l'apparition du bouton.
                 config = {
-                    characterData: false,
+                    characterData: true,
                     attributes: true,
-                    childList: false,
-                    subtree: false
+                    childList: true,
+                    subtree: true
                 };
 
-                //Mutation observer fires every time the product title in the modal changes
-                observer = new MutationObserver(function (mutations) {
+                //Fonction appelée à chaque changement du titre du produit
+                function mutationCallback() {
                     const prerelease = document.querySelector('#vvp-product-details-modal--product-title.prerelease-title') ||
                           document.querySelector('#product-details-sheet-title.prerelease-title');
                     if (prerelease) {
@@ -10499,7 +10492,7 @@ ${addressOptions.length && isPlus && apiOk ? `
                         return elem.style.display === 'none';
                     });
                     var wasPosted = GM_getValue("config")[parentAsin]?.queue;
-                    var isModalHidden = (document.querySelector(eltToWatch).style.visibility === 'hidden') ? true : false;
+                    var isModalHidden = (document.querySelector(eltToWatch)?.style.visibility === 'hidden') ? true : false;
 
                     if (hasError || queueType == null || queueType == "potluck" || window.location.href.includes('?search')) {
                         //Cacher le bouton si reco, reco ou autres
@@ -10522,14 +10515,44 @@ ${addressOptions.length && isPlus && apiOk ? `
                         //Mettre le focus sur le bouton "Envoyer à cette adresse"
                         observeShippingModal();
                     }
-                });
-
-                try {
-                    observer.observe(target, config);
-                } catch(error) {
-                    console.log('[PïckMe] Aucun produit sur cette page');
-                    displayContent();
                 }
+
+                observer = new MutationObserver(mutationCallback);
+
+                function observeTitle() {
+                    // Safari iOS n'entoure pas toujours le titre du produit d'un lien <a>.
+                    // On utilise uniquement l'ID pour s'assurer que l'élément est trouvé
+                    // quel que soit le type de balise employé.
+                    let target = document.querySelector('#vvp-product-details-modal--product-title');
+                    eltToWatch = '#vvp-product-details-modal--product-title';
+                    if (!target) {
+                        target = document.querySelector('#product-details-sheet-title');
+                        eltToWatch = '#product-details-sheet-title';
+                    }
+
+                    if (target) {
+                        observer.observe(target, config);
+                        mutationCallback();
+                    } else {
+                        //L'élément n'existe pas encore (cas iOS), on surveille le body
+                        const bodyObserver = new MutationObserver(function (_, obs) {
+                            let t = document.querySelector('#vvp-product-details-modal--product-title');
+                            eltToWatch = '#vvp-product-details-modal--product-title';
+                            if (!t) {
+                                t = document.querySelector('#product-details-sheet-title');
+                                eltToWatch = '#product-details-sheet-title';
+                            }
+                            if (t) {
+                                observer.observe(t, config);
+                                mutationCallback();
+                                obs.disconnect();
+                            }
+                        });
+                        bodyObserver.observe(document.body, { childList: true, subtree: true });
+                    }
+                }
+
+                observeTitle();
 
                 function focusButton(selector, timeout = 300) {
                     var button = document.querySelector(selector);
