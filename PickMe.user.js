@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PickMe
 // @namespace    http://tampermonkey.net/
-// @version      3.2.0
+// @version      3.2.1
 // @description  Plugin d'aide à la navigation pour les membres du discord Amazon Vine FR : https://discord.gg/amazonvinefr
 // @author       Créateur/Codeur principal : MegaMan / Codeur secondaire : Sulff / Testeurs : Louise, JohnnyBGoody, L'avocat du Diable et Popato (+ du code de lelouch_di_britannia, FMaz008 et Thorvarium)
 // @match        https://www.amazon.fr/vine/vine-items
@@ -1316,6 +1316,12 @@ NOTES:
             if (styleElement) {
                 styleElement.parentNode.removeChild(styleElement);
             }
+        }
+
+        function shouldForceDisplay() {
+            const hasItemTiles = document.querySelector('.vvp-item-tile') !== null;
+            const noOffersMessage = document.querySelector('.vvp-no-offers-msg');
+            return !hasItemTiles && !!noOffersMessage;
         }
 
         function runPickMe() {
@@ -12475,10 +12481,17 @@ ${addressOptions.length && isPlus && apiOk ? `
                 reloadAtNextFullHour();
             }
 
+            if (!allFinish && shouldForceDisplay()) {
+                allFinish = true;
+            }
+
             //Seulement si c'est une page de produit, sinon on retire de suite
             if (window.location.href.includes("queue=")) {
                 if (autohideEnabled) {
                     const intervalId = setInterval(() => {
+                        if (!allFinish && shouldForceDisplay()) {
+                            allFinish = true;
+                        }
                         if (allFinish) {
                             clearInterval(intervalId);
                             if (customSortingEnabled) {
@@ -12491,6 +12504,9 @@ ${addressOptions.length && isPlus && apiOk ? `
                 } else {
                     if (ordersInfos && ordersEnabled) {
                         const intervalId = setInterval(() => {
+                            if (!allFinish && shouldForceDisplay()) {
+                                allFinish = true;
+                            }
                             if (allFinish) {
                                 clearInterval(intervalId);
                                 if (customSortingEnabled) {
