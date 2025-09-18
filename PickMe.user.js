@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PickMe
 // @namespace    http://tampermonkey.net/
-// @version      3.2.1
+// @version      3.2.2
 // @description  Plugin d'aide à la navigation pour les membres du discord Amazon Vine FR : https://discord.gg/amazonvinefr
 // @author       Créateur/Codeur principal : MegaMan / Codeur secondaire : Sulff / Testeurs : Louise, JohnnyBGoody, L'avocat du Diable et Popato (+ du code de lelouch_di_britannia, FMaz008 et Thorvarium)
 // @match        https://www.amazon.fr/vine/vine-items
@@ -103,11 +103,18 @@ NOTES:
               padding-right: 0px !important;
             }
 
-            #navbar-main, #nav-main, #skiplink {
-              display: none;
+            /* === Ancien header Amazon === */
+            #navbar-main,
+            #nav-main,
+            #skiplink,
+            .amzn-ss-wrap {
+              display: none !important;
             }
 
-            .amzn-ss-wrap {
+            /* === Nouveau header Amazon (2025) === */
+            #navbar-backup-backup,
+            #navbar-mobile-bb,
+            header#navbar-mobile-bb {
               display: none !important;
             }
             `
@@ -2162,9 +2169,11 @@ NOTES:
                 const activeElement = document.activeElement; //Obtient l'élément actuellement en focus
                 const searchBox = document.getElementById('twotabsearchtextbox'); //L'élément du champ de recherche d'Amazon
                 const searchBoxVine = document.getElementById('vvp-search-text-input'); //Recherche vine
+                const searchBoxBackup = document.getElementById('nav-bb-search'); //Recherche header Amazon (nouvelle interface desktop)
+                const searchBoxMobileBackup = document.getElementById('nav-mobile-bb-search'); //Recherche header Amazon (nouvelle interface mobile)
 
                 //Vérifie si l'élément en focus est le champ de recherche
-                if (activeElement === searchBox || activeElement === searchBoxVine) {
+                if (activeElement === searchBox || activeElement === searchBoxVine || activeElement === searchBoxBackup || activeElement === searchBoxMobileBackup) {
                     return; //Ignore le reste du code si le champ de recherche est en focus
                 }
 
@@ -3062,10 +3071,19 @@ NOTES:
             var styleFooter = document.createElement('style');
 
             styleFooter.textContent = `
-            #rhf, #rhf-shoveler, .rhf-frame, #navFooter {
+            /* === Ancien footer Amazon === */
+            #rhf,
+            #rhf-shoveler,
+            .rhf-frame,
+            #navFooter,
+            footer.nav-mobile.nav-ftr-batmobile {
               display: none !important;
             }
-            footer.nav-mobile.nav-ftr-batmobile {
+
+            /* === Nouveau footer Amazon (2025) === */
+            footer.nav-bb-footer,
+            footer.nav-bb-footer-mobile,
+            #nav-ftr {
               display: none !important;
             }
          `
@@ -4342,6 +4360,24 @@ li.a-last a span.larr {      /* Cible le span larr dans les li a-last */
             addGlobalStyle(`.a-button-discord > .a-button-text { padding-left: 6px; }`);
             addGlobalStyle(`.a-button-discord-icon { background-image: url(https://m.media-amazon.com/images/S/sash/Gt1fHP07TsoILq3.png); content: ""; padding: 10px 10px 10px 10px; background-size: 512px 512px; background-repeat: no-repeat; margin-left: 10px; vertical-align: middle; }`);
             addGlobalStyle(`.a-button-discord.mobile-vertical { margin-top: 7px; margin-left: 0px; }`);
+
+            if (savedTheme === "dark") {
+                addGlobalStyle(`
+            /* === Compatibilité PickMe dark mode : barre de recherche Amazon === */
+            #nav-bb-search,
+            #nav-bb-search:focus,
+            #nav-mobile-bb-search,
+            #nav-mobile-bb-search:focus {
+                background-color: #ffffff !important;
+                color: #111111 !important;
+            }
+
+            #nav-bb-search::placeholder,
+            #nav-mobile-bb-search::placeholder {
+                color: #555555 !important;
+            }
+            `);
+            }
 
             //PickMe add
             //Récupérer l'enrollment
