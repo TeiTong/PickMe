@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PickMe
 // @namespace    http://tampermonkey.net/
-// @version      3.2.2
+// @version      3.3.0
 // @description  Plugin d'aide à la navigation pour les membres du discord Amazon Vine FR : https://discord.gg/amazonvinefr
 // @author       Créateur/Codeur principal : MegaMan / Codeur secondaire : Sulff / Testeurs : Louise, JohnnyBGoody, L'avocat du Diable et Popato (+ du code de lelouch_di_britannia, FMaz008 et Thorvarium)
 // @match        https://www.amazon.fr/vine/vine-items
@@ -26,7 +26,7 @@
 // @grant        GM_listValues
 // @run-at       document-start
 // @noframes
-// @require      https://raw.githubusercontent.com/teitong/reviewremember/main/ReviewRememberPM.user.js?v=1.9.7
+// @require      https://raw.githubusercontent.com/teitong/reviewremember/main/ReviewRememberPM.user.js?v=1.9.8
 // @require      https://vinepick.me/scripts/jquery-3.7.1.min.js
 // @require      https://vinepick.me/scripts/heic2any.min.js
 //==/UserScript==
@@ -447,6 +447,8 @@ NOTES:
         let favUrlOff = GM_getValue('favUrlOff', baseUrlPickme + "/img/coeurgris2.png");
         let hideUrlOn = GM_getValue('hideUrlOn', baseUrlPickme + "/img/eye.png");
         let hideUrlOff = GM_getValue('hideUrlOff', baseUrlPickme + "/img/eyehidden.png");
+        let hidePageNavigateEnabled = GM_getValue('hidePageNavigateEnabled', true);
+        let hidePagePreviousEnabled = GM_getValue('hidePagePreviousEnabled', false);
 
         let NSFWEnabled = GM_getValue('NSFWEnabled', false);
         let blurLevel = GM_getValue('blurLevel', '15');
@@ -483,6 +485,8 @@ NOTES:
         GM_setValue("favUrlOff", favUrlOff);
         GM_setValue("hideUrlOn", hideUrlOn);
         GM_setValue("hideUrlOff", hideUrlOff);
+        GM_setValue("hidePageNavigateEnabled", hidePageNavigateEnabled);
+        GM_setValue("hidePagePreviousEnabled", hidePagePreviousEnabled);
 
         GM_setValue("NSFWEnabled", NSFWEnabled);
         GM_setValue("blurLevel", blurLevel);
@@ -789,9 +793,6 @@ NOTES:
 
         //Gestion des favoris sur PickMe Web
         if ((window.location.hostname === "pickme.alwaysdata.net" || window.location.hostname === hostnamePickMe) && /^\/[^\/]+\.php$/.test(window.location.pathname)) {
-            if (savedTheme == "dark") {
-                loadCSS(baseURLCSS + "style-dark.css");
-            }
             document.addEventListener('click', function(event) {
                 //Vérifier si l'élément cliqué a la classe 'favori-icon'
                 if (event.target.classList.contains('favori-icon')) {
@@ -1409,6 +1410,7 @@ NOTES:
             let callUrlTypeFav = GM_getValue("callUrlTypeFav", "callFavOnly");
             let autoRefresh = GM_getValue("autoRefresh", false);
             let autoRefreshTimeSlot = GM_getValue("autoRefreshTimeSlot", false);
+            let autoRefreshLimitToFirstTab = GM_getValue("autoRefreshLimitToFirstTab", true);
             let timeSlotStart = GM_getValue("timeSlotStart", "02:00");
             let timeSlotEnd = GM_getValue("timeSlotEnd", "14:00");
 
@@ -1585,6 +1587,7 @@ NOTES:
 
             GM_setValue("autoRefresh", autoRefresh);
             GM_setValue("autoRefreshTimeSlot", autoRefreshTimeSlot);
+            GM_setValue("autoRefreshLimitToFirstTab", autoRefreshLimitToFirstTab);
             GM_setValue("timeSlotStart", timeSlotStart);
             GM_setValue("timeSlotEnd", timeSlotEnd);
 
@@ -2111,7 +2114,9 @@ NOTES:
                 down: 's',
                 hide: 'h',
                 show: 'j',
-                sync: ''
+                sync: '',
+                previousPage: 'a',
+                nextPage: 'e'
             };
 
             //Fonction pour récupérer la configuration des touches
@@ -2123,7 +2128,9 @@ NOTES:
                     down: GM_getValue('keyDown', defaultKeys.down),
                     hide: GM_getValue('keyHide', defaultKeys.hide),
                     show: GM_getValue('keyShow', defaultKeys.show),
-                    sync: GM_getValue('keySync', defaultKeys.sync)
+                    sync: GM_getValue('keySync', defaultKeys.sync),
+                    previousPage: GM_getValue('keyPrevPage', defaultKeys.previousPage),
+                    nextPage: GM_getValue('keyNextPage', defaultKeys.nextPage)
                 };
             }
 
@@ -2190,7 +2197,13 @@ NOTES:
                     return;
                 }
                 const keys = getKeyConfig();
-                if (e.key === keys.left) {
+                if (keys.previousPage && e.key === keys.previousPage) {
+                    simulerClicSurBouton('boutonCacherPrecedentHaut');
+                }
+                else if (keys.nextPage && e.key === keys.nextPage) {
+                    simulerClicSurBouton('boutonCacherSuivantHaut');
+                }
+                else if (e.key === keys.left) {
                     naviguerPage(-1);
                 }
                 else if (e.key === keys.right) {
@@ -2651,47 +2664,117 @@ NOTES:
                 });
             }
 
+            function ensureHideButtonStyles() {
+                if (document.querySelector('style[data-pm-hide-buttons]')) {
+                    return;
+                }
+
+                const style = document.createElement('style');
+                style.dataset.pmHideButtons = '1';
+                style.textContent = `
+                .bouton-reset {
+                        background-color: #f7ca00;
+                        color: black;
+                        font-weight: bold;
+                        text-decoration: none;
+                        display: inline-block;
+                        border: 1px solid #dcdcdc;
+                        border-radius: 20px;
+                        padding: 3px 10px;
+                        margin-left: 5px;
+                        cursor: pointer;
+                        outline: none;
+                }
+
+    `;
+
+                style.textContent += `
+                 .bouton-action {
+                        background-color: #f7ca00;
+                        color: black;
+                        font-weight: bold;
+                        text-decoration: none;
+                        display: inline-block;
+                        border: 1px solid #dcdcdc;
+                        border-radius: 20px;
+                        padding: 5px 15px;
+                        margin-right: 5px;
+                        cursor: pointer;
+                        outline: none;
+                }
+                 .bouton-action:disabled,
+                 .bouton-action[aria-disabled="true"] {
+                        background-color: #dcdcdc;
+                        color: #888 !important;
+                        border-color: #c0c0c0;
+                        cursor: not-allowed;
+                }
+                 .navigation-buttons {
+                        display: inline-flex;
+                        gap: 5px;
+                        margin-left: 5px;
+                        flex-wrap: wrap;
+                        align-items: center;
+                }
+                 .navigation-buttons-mobile {
+                        display: flex;
+                        margin-left: 0;
+                        margin-top: 5px;
+                        gap: 5px;
+                        width: 100%;
+                }
+                `;
+                document.head.appendChild(style);
+            }
+
             function ajouterIconeEtFonctionCacher() {
                 convertGMFav();
                 const produits = document.querySelectorAll('.vvp-item-tile');
                 const resultats = document.querySelector('#vvp-items-grid-container > p');
                 const vineGrid = document.querySelector('#vvp-items-grid');
+                const urlParams = new URLSearchParams(window.location.search);
+
+                let infoQueue = urlParams.get('queue');
+                const hideNavigationActive = hidePageNavigateEnabled && (infoQueue === 'encore' || infoQueue === 'all_items');
+                const isMobileLayout = isMobile();
+
+                function normaliserTexte(texte) {
+                    return (texte || '')
+                        .normalize('NFD')
+                        .replace(/[\u0300-\u036f]/g, '')
+                        .replace(/\s+/g, ' ')
+                        .trim()
+                        .toLowerCase();
+                }
+
+                function trouverLienPagination(type) {
+                    const recherche = type === 'next' ? 'suivant' : 'precedent';
+                    const selecteurs = [
+                        '.a-pagination a[href*="/vine/vine-items"]',
+                        '.a-pagination li a[href*="/vine/vine-items"]',
+                        'li a[href*="/vine/vine-items"]',
+                        'a[href*="/vine/vine-items"]'
+                    ];
+
+                    for (const selecteur of selecteurs) {
+                        const liens = Array.from(document.querySelectorAll(selecteur));
+                        const lien = liens.find(element => normaliserTexte(element.textContent).includes(recherche));
+                        if (lien) {
+                            return lien;
+                        }
+                    }
+                    return null;
+                }
+
+                function recupererLiensPagination() {
+                    return {
+                        precedent: trouverLienPagination('previous'),
+                        suivant: trouverLienPagination('next')
+                    };
+                }
 
                 //Ajout du style pour les boutons
-                const style = document.createElement('style');
-                style.textContent = `
-		.bouton-reset {
-			background-color: #f7ca00;
-			color: black;
-			font-weight: bold;
-			text-decoration: none;
-			display: inline-block;
-			border: 1px solid #dcdcdc;
-			border-radius: 20px;
-			padding: 3px 10px;
-			margin-left: 5px;
-			cursor: pointer;
-			outline: none;
-		}
-
-    `;
-
-                style.textContent += `
-		 .bouton-action {
-			background-color: #f7ca00;
-			color: black;
-			font-weight: bold;
-			text-decoration: none;
-			display: inline-block;
-			border: 1px solid #dcdcdc;
-			border-radius: 20px;
-			padding: 5px 15px;
-			margin-right: 5px;
-			cursor: pointer;
-			outline: none;
-		}
-		`;
-                document.head.appendChild(style);
+                ensureHideButtonStyles();
 
                 //Icone pour cacher/montrer
                 const urlIcone = hideUrlOff;
@@ -2722,7 +2805,41 @@ NOTES:
                     boutonToutAfficher.classList.add('bouton-action');
                     boutonToutAfficher.id = `boutonToutAfficher${position}`;
 
-                    return { boutonVisibles, boutonCaches, boutonCacherTout, boutonToutAfficher };
+                    let boutonCacherPrecedent = null;
+                    let boutonCacherSuivant = null;
+                    let navigationWrapper = null;
+
+                    if (hideNavigationActive) {
+                        navigationWrapper = document.createElement(isMobileLayout ? 'div' : 'span');
+                        navigationWrapper.classList.add('navigation-buttons');
+                        if (isMobileLayout) {
+                            navigationWrapper.classList.add('navigation-buttons-mobile');
+                        }
+
+                        if (hidePagePreviousEnabled) {
+                            boutonCacherPrecedent = document.createElement('button');
+                            boutonCacherPrecedent.textContent = '⏮';
+                            boutonCacherPrecedent.classList.add('bouton-action');
+                            boutonCacherPrecedent.id = `boutonCacherPrecedent${position}`;
+                            boutonCacherPrecedent.title = 'Tout cacher puis revenir à la page précédente';
+                            boutonCacherPrecedent.setAttribute('aria-label', 'Tout cacher puis revenir à la page précédente');
+                            navigationWrapper.appendChild(boutonCacherPrecedent);
+                        }
+
+                        boutonCacherSuivant = document.createElement('button');
+                        boutonCacherSuivant.textContent = '⏭';
+                        boutonCacherSuivant.classList.add('bouton-action');
+                        boutonCacherSuivant.id = `boutonCacherSuivant${position}`;
+                        boutonCacherSuivant.title = 'Tout cacher puis passer à la page suivante';
+                        boutonCacherSuivant.setAttribute('aria-label', 'Tout cacher puis passer à la page suivante');
+                        navigationWrapper.appendChild(boutonCacherSuivant);
+
+                        if (!navigationWrapper.childElementCount) {
+                            navigationWrapper = null;
+                        }
+                    }
+
+                    return { boutonVisibles, boutonCaches, boutonCacherTout, boutonToutAfficher, boutonCacherPrecedent, boutonCacherSuivant, navigationWrapper };
                 }
 
                 //Fonction pour synchroniser les boutons haut et bas
@@ -2817,6 +2934,9 @@ NOTES:
                 divBoutonsHaut.appendChild(boutonsHaut.boutonCaches);
                 divBoutonsHaut.appendChild(boutonsHaut.boutonCacherTout);
                 divBoutonsHaut.appendChild(boutonsHaut.boutonToutAfficher);
+                if (boutonsHaut.navigationWrapper) {
+                    divBoutonsHaut.appendChild(boutonsHaut.navigationWrapper);
+                }
 
                 if (resultats) {
                     resultats.after(divBoutonsHaut);
@@ -2836,6 +2956,9 @@ NOTES:
                 divBoutonsBas.appendChild(boutonsBas.boutonCaches);
                 divBoutonsBas.appendChild(boutonsBas.boutonCacherTout);
                 divBoutonsBas.appendChild(boutonsBas.boutonToutAfficher);
+                if (boutonsBas.navigationWrapper) {
+                    divBoutonsBas.appendChild(boutonsBas.navigationWrapper);
+                }
 
                 if (vineGrid && hideBas) {
                     vineGrid.after(divBoutonsBas);
@@ -2843,6 +2966,49 @@ NOTES:
 
                 //Synchronisation des boutons haut et bas
                 synchroniserBoutons(boutonsHaut, boutonsBas, hideBas);
+
+                if (hideNavigationActive) {
+                    const liensPagination = recupererLiensPagination();
+                    const appliquerEtatApresCacher = () => {
+                        boutonsHaut.boutonCacherTout.style.display = '';
+                        boutonsHaut.boutonToutAfficher.style.display = 'none';
+                        if (hideBas) {
+                            boutonsBas.boutonCacherTout.style.display = '';
+                            boutonsBas.boutonToutAfficher.style.display = 'none';
+                        }
+                    };
+
+                    const desactiverBoutonNavigation = (bouton) => {
+                        if (!bouton) {
+                            return;
+                        }
+                        bouton.disabled = true;
+                        bouton.setAttribute('aria-disabled', 'true');
+                        if (bouton.title && !bouton.title.includes('indisponible depuis cette page')) {
+                            bouton.title = `${bouton.title} (indisponible depuis cette page)`;
+                        }
+                    };
+
+                    const attacherNavigation = (bouton, lien) => {
+                        if (!bouton) {
+                            return;
+                        }
+                        if (!lien) {
+                            desactiverBoutonNavigation(bouton);
+                            return;
+                        }
+                        bouton.addEventListener('click', () => {
+                            toggleTousLesProduits(true);
+                            appliquerEtatApresCacher();
+                            window.location.href = lien.href;
+                        });
+                    };
+
+                    attacherNavigation(boutonsHaut.boutonCacherPrecedent, liensPagination.precedent);
+                    attacherNavigation(boutonsHaut.boutonCacherSuivant, liensPagination.suivant);
+                    attacherNavigation(boutonsBas.boutonCacherPrecedent, liensPagination.precedent);
+                    attacherNavigation(boutonsBas.boutonCacherSuivant, liensPagination.suivant);
+                }
 
                 //Fonction pour cacher ou afficher tous les produits
                 function toggleTousLesProduits(cacher) {
@@ -3122,11 +3288,15 @@ NOTES:
                 if (isMobile()) {
                     style.textContent = `
         #product-details-sheet-tax-value {
-			position: absolute !important;
-			top: 0px !important;
+            position: absolute !important;
+            top: 0px !important;
             width: auto;
+            margin : 5px !important;
 			z-index: 101;
 		}
+        #product-details-sheet-main .product-details-sheet__title {
+            margin-top: 30px !important;
+        }
         .a-sheet-heading-container {
             position: relative;
         }
@@ -5101,6 +5271,7 @@ li.a-last a span.larr {      /* Cible le span larr dans les li a-last */
 
             if ((window.location.href.includes("queue=encore") || window.location.href.includes("queue=all_items")) && catEnabled && apiOk) {
                 updateCat();
+                ensureHideButtonStyles();
                 //Création du bouton "Reset"
                 const boutonReset = document.createElement('button');
                 boutonReset.textContent = 'Reset';
@@ -6398,6 +6569,8 @@ ${addressOptions.length && isPlus && apiOk ? `
         ${createKeyInput('keyDown', 'Onglet précédent (flêche : ArrowDown)')}
         ${createKeyInput('keyHide', 'Tout cacher')}
         ${createKeyInput('keyShow', 'Tout montrer')}
+        ${createKeyInput('keyPrevPage', 'Tout cacher puis revenir à la page précédente (⏮)')}
+        ${createKeyInput('keyNextPage', 'Tout cacher puis passer à la page suivante (⏭)')}
         ${createKeyInput('keySync', 'Synchroniser les produits avec le serveur et tout cacher')}
 <div class="button-container final-buttons">
   <button class="full-width" id="saveKeyConfig">Enregistrer</button>
@@ -6430,7 +6603,7 @@ ${addressOptions.length && isPlus && apiOk ? `
 
             //Fonction pour enregistrer la configuration des touches
             function saveKeyConfig() {
-                const keys = ['keyLeft', 'keyRight', 'keyUp', 'keyDown', 'keyHide', 'keyShow', 'keySync'];
+                const keys = ['keyLeft', 'keyRight', 'keyUp', 'keyDown', 'keyHide', 'keyShow', 'keyPrevPage', 'keyNextPage', 'keySync'];
                 keys.forEach(key => {
                     const inputValue = document.getElementById(key).value;
                     GM_setValue(key, inputValue);
@@ -7417,8 +7590,10 @@ ${addressOptions.length && isPlus && apiOk ? `
 
                 ajouterOptionTexte('logoPM', 'URL du logo', baseUrlPickme + "/img/PM.png");
 
-                ajouterSousTitre('Icônes Favori/Cacher');
+                ajouterSousTitre('Favori/Cacher');
                 ajouterOptionCheckbox('hideBas', 'Ajouter des boutons en bas de page pour rendre visibles ou cacher les produits (en plus de ceux en haut de page)');
+                ajouterOptionCheckbox('hidePageNavigateEnabled', 'Ajouter le bouton ⏭ pour tout cacher puis passer à la page suivante (onglets "Autres articles" et "Tous les articles")');
+                ajouterOptionCheckbox('hidePagePreviousEnabled', 'Ajouter aussi le bouton ⏮ pour tout cacher puis revenir à la page précédente');
                 ajouterSeparateur();
                 ajouterOptionTexte('favUrlOn', 'URL de l\'image du favori', baseUrlPickme + "/img/coeurrouge2.png");
                 ajouterOptionTexte('favUrlOff', 'URL de l\'image du non favori', baseUrlPickme + "/img/coeurgris2.png");
@@ -7474,6 +7649,7 @@ ${addressOptions.length && isPlus && apiOk ? `
                 ajouterOptionCheckbox('shareOnlyShow', 'Ne pas partager les produits cachés, seulement les visibles');
 
                 ajouterSousTitre('Auto-refresh');
+                ajouterOptionCheckbox('autoRefreshLimitToFirstTab', 'Désactiver le refresh dès le second onglet (et les suivants), il ne sera alors actif que dans le premier déjà ouvert');
                 ajouterOptionCheckbox('autoRefreshTimeSlot', 'Activer le refresh uniquement pendant la plage horaire (hors refresh horaire)');
                 ajouterOptionTexte('timeSlotStart', 'Heure début (format HH:mm)', '02:00');
                 ajouterOptionTexte('timeSlotEnd', 'Heure fin (format HH:mm)', '14:00');
@@ -11657,95 +11833,165 @@ ${addressOptions.length && isPlus && apiOk ? `
 
             //Bouton de tri
             function insertSortMenu() {
-                //Création du wrapper sans marges verticales, et position à droite
-                const wrapper = document.createElement('div');
-                wrapper.className = 'tri-container';
-                wrapper.style.margin = '0';
-                wrapper.style.marginLeft = 'auto';
+                //Création du bloc Tri (wrapper)
+                const wrapper=document.createElement('div');
+                wrapper.className='tri-container';
+                wrapper.style.margin='0';
+                wrapper.style.whiteSpace='nowrap';
 
                 //Label "Tri :"
-                const label = document.createElement('span');
-                label.textContent = 'Tri : ';
+                const label=document.createElement('span');
+                label.textContent='Tri : ';
+                label.style.marginRight='6px';
                 wrapper.appendChild(label);
 
-                //Le <select> et ses options (vide + 4 prédéfinis + Personnalisé)
-                const select = document.createElement('select');
-                select.className = 'tri-select';
+                //Select
+                const select=document.createElement('select');
+                select.className='tri-select';
+                select.style.boxSizing='border-box';
+                select.style.maxWidth='100%';
                 if (mobileEnabled) {
-                    select.style.boxSizing = 'border-box';
                     select.style.maxWidth = '60%';
                     wrapper.style.overflowY = 'hidden';
                 }
+                wrapper.appendChild(select);
 
                 //Option vide
-                select.appendChild(Object.assign(document.createElement('option'), { value: '', textContent: '' }));
+                select.appendChild(Object.assign(document.createElement('option'),{value:'',textContent:''}));
 
                 //Tris prédéfinis
                 [
-                    { text: 'Prix décroissant', payload: [{ type: 'price', order: 'desc'}] },
-                    { text: 'ETV croissant', payload: [{ type: 'etv', order: 'asc'}] },
-                    { text: 'Prix croissant', payload: [{ type: 'price', order: 'asc' }] },
-                    { text: 'ETV décroissant', payload: [{ type: 'etv', order: 'desc'}] }
-                ].forEach(opt => {
-                    const o = document.createElement('option');
-                    o.textContent = opt.text;
-                    o.value = JSON.stringify(opt.payload);
+                    { text:'Prix décroissant', payload:[{type:'price', order:'desc'}] },
+                    { text:'ETV croissant', payload:[{type:'etv', order:'asc'}] },
+                    { text:'Prix croissant', payload:[{type:'price',order:'asc'}] },
+                    { text:'ETV décroissant', payload:[{type:'etv', order:'desc'}] }
+                ].forEach(opt=>{
+                    const o=document.createElement('option');
+                    o.textContent=opt.text;
+                    o.value=JSON.stringify(opt.payload);
                     select.appendChild(o);
                 });
 
                 //Option personnalisé
-                const oCustom = document.createElement('option');
-                oCustom.value = '__custom__';
-                oCustom.textContent = 'Personnalisé';
+                const oCustom=document.createElement('option');
+                oCustom.value='__custom__';
+                oCustom.textContent='Personnalisé';
                 select.appendChild(oCustom);
 
-                //Si on a activé déja le tri personnalisé, on présélectionne dans le menu
-                if (customSortingEnabled) {
-                    oCustom.selected = true;
-                    select.remove(0);
+                //Préselection si tri personnalisé actif
+                if (customSortingEnabled){
+                    oCustom.selected=true;
+                    if(select.options.length>0){ select.remove(0); }
                 }
 
-                //Événement de changement
-                select.addEventListener('change', e => {
-                    const v = e.target.value;
-                    if (v === '') return;
-                    if (v === '__custom__') {
-                        sortItems(customSorting);
-                    } else {
-                        sortItems(JSON.parse(v));
+                //Change event
+                select.addEventListener('change', e=>{
+                    const v=e.target.value;
+                    if(v==='')return;
+                    if(v==='__custom__'){
+                        if(typeof sortItems==='function'){ sortItems(typeof customSorting!=='undefined'?customSorting:[]); }
+                    }else{
+                        if(typeof sortItems==='function'){ sortItems(JSON.parse(v)); }
                     }
-                    //Ne supprimer l'option vide que si elle existe encore en position 0
-                    if (select.options.length > 0 && select.options[0].value === '') {
-                        select.remove(0);
-                    }
-                    //Retire le focus
+                    if(select.options.length>0 && select.options[0].value===''){ select.remove(0); }
                     select.blur();
                 });
 
-                wrapper.appendChild(select);
+                //Insertion
+                if (hideEnabled){
+                    (function waitForContainer(){
+                        const container=document.getElementById('divCacherHaut');
+                        if(!container){ setTimeout(waitForContainer,50); return; }
 
-                //Insertion seulement si hideEnabled
-                if (hideEnabled) {
-                    (function waitForContainer() {
-                        const container = document.getElementById('divCacherHaut');
-                        if (container) {
-                            container.style.display = 'flex';
-                            container.style.alignItems = 'center';
-                            container.appendChild(wrapper);
-                        } else {
-                            setTimeout(waitForContainer, 50);
+                        //On restructure: container en "bloc", et on crée une vraie 1ère ligne sans wrap
+                        container.style.display='block'; //on gère nos lignes nous-mêmes
+                        container.style.rowGap='5px';
+
+                        //Ligne 1: barre supérieure
+                        let row1=container.querySelector('.pm-topbar');
+                        if(!row1){
+                            row1=document.createElement('div');
+                            row1.className='pm-topbar';
+                            row1.style.display='flex';
+                            row1.style.alignItems='center';
+                            row1.style.marginBottom='6px';
+                            row1.style.width='100%';
+                            row1.style.flexWrap='nowrap'; //ne jamais wrap
+                            container.insertBefore(row1, container.firstChild);
+                        }
+
+                        //Récupérer les éléments existants
+                        const btnVisibles=container.querySelector('#boutonVisiblesHaut');
+                        const btnCaches=container.querySelector('#boutonCachesHaut');
+                        const btnToutCacher=container.querySelector('#boutonCacherToutHaut');
+                        const btnToutAfficher=container.querySelector('#boutonToutAfficherHaut');
+                        let toggleGroup=container.querySelector('.pm-toggle-group');
+                        if(!toggleGroup){
+                            toggleGroup=document.createElement('span');
+                            toggleGroup.className='pm-toggle-group';
+                            toggleGroup.style.display='inline-flex';
+                            toggleGroup.style.alignItems='center';
+                            toggleGroup.style.gap='5px';
+                        }
+                        const nav=container.querySelector('.navigation-buttons');
+                        const isMobileLayout = typeof isMobile === 'function' ? isMobile() : false;
+
+                        //Vider row1 si besoin (pour éviter doublons en ré-insertion)
+                        while(row1.firstChild){ row1.removeChild(row1.firstChild); }
+
+                        //Ajouter boutons gauche (si présents)
+                        if(btnVisibles) row1.appendChild(btnVisibles);
+                        if(btnCaches) row1.appendChild(btnCaches);
+
+                        while(toggleGroup.firstChild){ toggleGroup.removeChild(toggleGroup.firstChild); }
+                        if(btnToutCacher) toggleGroup.appendChild(btnToutCacher);
+                        if(btnToutAfficher) toggleGroup.appendChild(btnToutAfficher);
+
+                        if(toggleGroup.childElementCount){
+                            row1.appendChild(toggleGroup);
+                        }
+
+                        if(!isMobileLayout && nav){
+                            nav.style.display='inline-flex';
+                            nav.style.gap='5px';
+                            nav.style.marginTop='0';
+                            nav.style.justifyContent='flex-start';
+                            row1.appendChild(nav);
+                        }
+
+                        //Spacer extensible pour pousser le tri à droite
+                        const spacer=document.createElement('div');
+                        spacer.style.flex='1 1 auto';
+                        row1.appendChild(spacer);
+
+                        //Ajouter le bloc Tri tout à droite (sans wrap)
+                        row1.appendChild(wrapper);
+
+                        //Ligne 2: navigation seule (en-dessous)
+                        if(nav){
+                            if(isMobileLayout){
+                                nav.style.display='flex';
+                                nav.style.gap='6px';
+                                nav.style.marginTop='6px';
+                                nav.style.justifyContent='flex-start'; //ou 'flex-end' si tu veux à droite
+                                //S’assurer que la nav est bien sous row1
+                                if(nav.previousSibling!==row1){
+                                    container.appendChild(nav);
+                                }
+                            }else if(nav.parentElement!==row1){
+                                row1.appendChild(nav);
+                            }
                         }
                     })();
-                } else {
-                    const resultats = document.querySelector('#vvp-items-grid-container > p');
-                    if (resultats) {
-                        wrapper.style.marginBottom = '10px';
+                } else{
+                    //Fallback si hideEnabled est faux: on garde ton insertion d'origine
+                    const resultats=document.querySelector('#vvp-items-grid-container > p');
+                    if(resultats){
+                        wrapper.style.marginBottom='10px';
                         resultats.after(wrapper);
-                    } else {
-                        const vineGrid = document.getElementById('vvp-items-grid');
-                        if (vineGrid) {
-                            vineGrid.before(wrapper);
-                        }
+                    }else{
+                        const vineGrid=document.getElementById('vvp-items-grid');
+                        if(vineGrid){ vineGrid.before(wrapper); }
                     }
                 }
             }
@@ -12139,9 +12385,9 @@ ${addressOptions.length && isPlus && apiOk ? `
                     const style = document.createElement('style');
 
                     style.textContent = `
-		 .bouton-action {
-			background-color: #f7ca00;
-			color: black;
+                 .bouton-action {
+                        background-color: #f7ca00;
+                        color: black;
 			font-weight: bold;
 			text-decoration: none;
 			display: inline-block;
@@ -12157,10 +12403,169 @@ ${addressOptions.length && isPlus && apiOk ? `
                 }
             }
 
+            const AUTO_REFRESH_PRIMARY_KEY = 'autoRefreshPrimaryTab';
+            const AUTO_REFRESH_TAB_ID_KEY = 'pickmeAutoRefreshTabId';
+            const AUTO_REFRESH_HEARTBEAT_INTERVAL = 15000;
+            const AUTO_REFRESH_STALE_THRESHOLD = 45000;
+            const autoRefreshTabId = getAutoRefreshTabId();
+            let autoRefreshHeartbeatId = null;
+            let autoRefreshMonitorId = null;
+            let isPrimaryAutoRefreshTab = !autoRefreshLimitToFirstTab;
+
+            function getAutoRefreshTabId() {
+                const storageKey = AUTO_REFRESH_TAB_ID_KEY;
+                try {
+                    let existingId = sessionStorage.getItem(storageKey);
+                    if (!existingId) {
+                        existingId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+                        sessionStorage.setItem(storageKey, existingId);
+                    }
+                    return existingId;
+                } catch (error) {
+                    return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+                }
+            }
+
+            function getStoredAutoRefreshPrimary() {
+                const stored = GM_getValue(AUTO_REFRESH_PRIMARY_KEY, null);
+                if (stored && typeof stored === 'object' && typeof stored.id === 'string' && typeof stored.timestamp === 'number') {
+                    return stored;
+                }
+                return null;
+            }
+
+            function isStoredPrimaryStale(stored) {
+                if (!stored) {
+                    return true;
+                }
+                return (Date.now() - stored.timestamp) > AUTO_REFRESH_STALE_THRESHOLD;
+            }
+
+            function setStoredAutoRefreshPrimary(entry) {
+                if (entry) {
+                    GM_setValue(AUTO_REFRESH_PRIMARY_KEY, entry);
+                } else {
+                    GM_deleteValue(AUTO_REFRESH_PRIMARY_KEY);
+                }
+            }
+
+            function stopAutoRefreshHeartbeat() {
+                if (autoRefreshHeartbeatId) {
+                    clearInterval(autoRefreshHeartbeatId);
+                    autoRefreshHeartbeatId = null;
+                }
+            }
+
+            function stopAutoRefreshMonitor() {
+                if (autoRefreshMonitorId) {
+                    clearInterval(autoRefreshMonitorId);
+                    autoRefreshMonitorId = null;
+                }
+            }
+
+            function startAutoRefreshHeartbeat() {
+                if (!autoRefreshLimitToFirstTab || autoRefreshHeartbeatId) {
+                    return;
+                }
+                autoRefreshHeartbeatId = setInterval(() => {
+                    if (!autoRefreshLimitToFirstTab || !isPrimaryAutoRefreshTab) {
+                        return;
+                    }
+                    const stored = getStoredAutoRefreshPrimary();
+                    if (!stored || stored.id !== autoRefreshTabId) {
+                        isPrimaryAutoRefreshTab = false;
+                        stopAutoRefreshHeartbeat();
+                        return;
+                    }
+                    setStoredAutoRefreshPrimary({ id: autoRefreshTabId, timestamp: Date.now() });
+                }, AUTO_REFRESH_HEARTBEAT_INTERVAL);
+            }
+
+            function startAutoRefreshMonitor(onPrimaryGained) {
+                if (!autoRefreshLimitToFirstTab || autoRefreshMonitorId) {
+                    return;
+                }
+                autoRefreshMonitorId = setInterval(() => {
+                    if (attemptToRegisterPrimaryAutoRefreshTab()) {
+                        stopAutoRefreshMonitor();
+                        if (typeof onPrimaryGained === 'function') {
+                            onPrimaryGained();
+                        }
+                    }
+                }, AUTO_REFRESH_HEARTBEAT_INTERVAL);
+            }
+
+            function attemptToRegisterPrimaryAutoRefreshTab() {
+                if (!autoRefreshLimitToFirstTab) {
+                    isPrimaryAutoRefreshTab = true;
+                    return true;
+                }
+                const stored = getStoredAutoRefreshPrimary();
+                const now = Date.now();
+                if (!stored || isStoredPrimaryStale(stored) || stored.id === autoRefreshTabId) {
+                    setStoredAutoRefreshPrimary({ id: autoRefreshTabId, timestamp: now });
+                    const confirmation = getStoredAutoRefreshPrimary();
+                    if (confirmation && confirmation.id === autoRefreshTabId) {
+                        isPrimaryAutoRefreshTab = true;
+                        startAutoRefreshHeartbeat();
+                        stopAutoRefreshMonitor();
+                        return true;
+                    }
+                }
+                isPrimaryAutoRefreshTab = false;
+                return false;
+            }
+
+            function releasePrimaryAutoRefreshTab() {
+                if (!autoRefreshLimitToFirstTab) {
+                    return;
+                }
+                const stored = getStoredAutoRefreshPrimary();
+                if (stored && stored.id === autoRefreshTabId) {
+                    setStoredAutoRefreshPrimary(null);
+                }
+                stopAutoRefreshHeartbeat();
+                stopAutoRefreshMonitor();
+                isPrimaryAutoRefreshTab = false;
+            }
+
+            if (autoRefreshLimitToFirstTab) {
+                window.addEventListener('beforeunload', releasePrimaryAutoRefreshTab);
+                window.addEventListener('pagehide', releasePrimaryAutoRefreshTab);
+            }
+
             //AutoRefresh
             function reloadAtNextFullHour() {
                 let refreshInterval;
                 let countdownDiv;
+                let optionsContainerElement = null;
+                let enableRefreshCheckboxElement = null;
+                let autoRefreshInfoBanner = null;
+
+                function updateAutoRefreshUIState() {
+                    if (!optionsContainerElement || !enableRefreshCheckboxElement) {
+                        return;
+                    }
+                    if (autoRefreshLimitToFirstTab && !isPrimaryAutoRefreshTab) {
+                        enableRefreshCheckboxElement.disabled = true;
+                        if (!autoRefreshInfoBanner) {
+                            autoRefreshInfoBanner = document.createElement('div');
+                            autoRefreshInfoBanner.textContent = 'Auto-refresh désactivé dans cet onglet car déjà actif dans un autre onglet.';
+                            autoRefreshInfoBanner.style.color = '#b12704';
+                            autoRefreshInfoBanner.style.fontWeight = 'bold';
+                            autoRefreshInfoBanner.style.marginRight = '20px';
+                            autoRefreshInfoBanner.style.maxWidth = '220px';
+                            autoRefreshInfoBanner.style.lineHeight = '1.3';
+                            optionsContainerElement.insertBefore(autoRefreshInfoBanner, optionsContainerElement.firstChild);
+                        }
+                    } else {
+                        enableRefreshCheckboxElement.disabled = false;
+                        if (autoRefreshInfoBanner) {
+                            autoRefreshInfoBanner.remove();
+                            autoRefreshInfoBanner = null;
+                        }
+                    }
+                }
 
                 //Nouvelles variables pour la plage horaire
                 let autoRefreshTimeSlot = GM_getValue("autoRefreshTimeSlot", true);
@@ -12250,12 +12655,14 @@ ${addressOptions.length && isPlus && apiOk ? `
                     optionsContainer.style.alignItems = 'center';
                     optionsContainer.style.width = 'auto';
                     optionsContainer.style.maxWidth = '800px';
+                    optionsContainerElement = optionsContainer;
 
                     //Checkbox Activer
                     const enableRefreshLabel = document.createElement('label');
                     const enableRefreshCheckbox = document.createElement('input');
                     enableRefreshCheckbox.type = 'checkbox';
                     enableRefreshCheckbox.style.marginRight = '5px';
+                    enableRefreshCheckboxElement = enableRefreshCheckbox;
                     enableRefreshLabel.appendChild(enableRefreshCheckbox);
                     enableRefreshLabel.appendChild(document.createTextNode('Activer'));
                     enableRefreshLabel.style.alignItems = 'center';
@@ -12395,6 +12802,7 @@ ${addressOptions.length && isPlus && apiOk ? `
                     randomDelayInput.value = randomDelay;
                     fixedHourCheckbox.checked = useFixedHour;
                     enableRefreshCheckbox.checked = enableRefresh;
+                    updateAutoRefreshUIState();
                 }
 
                 //Schedule le refresh et affiche le compte à rebours
@@ -12406,6 +12814,24 @@ ${addressOptions.length && isPlus && apiOk ? `
                     if (countdownDiv) {
                         countdownDiv.remove();
                         countdownDiv = null;
+                    }
+                    if (autoRefreshLimitToFirstTab) {
+                        const storedPrimary = getStoredAutoRefreshPrimary();
+                        if (!storedPrimary || storedPrimary.id !== autoRefreshTabId) {
+                            if (isPrimaryAutoRefreshTab) {
+                                isPrimaryAutoRefreshTab = false;
+                                stopAutoRefreshHeartbeat();
+                                startAutoRefreshMonitor(() => {
+                                    updateAutoRefreshUIState();
+                                    scheduleRefresh();
+                                });
+                                updateAutoRefreshUIState();
+                            }
+                            return;
+                        }
+                    }
+                    if (autoRefreshLimitToFirstTab && !isPrimaryAutoRefreshTab) {
+                        return;
                     }
                     const next = calculateRefreshDelay();
                     if (!next) return;
@@ -12458,9 +12884,15 @@ ${addressOptions.length && isPlus && apiOk ? `
                     updateCountdown();
                 }
 
-                const nextRefreshTime = calculateRefreshDelay();
+                const hasPrimary = attemptToRegisterPrimaryAutoRefreshTab();
                 if (!(useFixedHour && refreshHideUI) && !isMobile()) {
                     addAutoRefreshUI();
+                }
+                if (!hasPrimary && autoRefreshLimitToFirstTab) {
+                    startAutoRefreshMonitor(() => {
+                        updateAutoRefreshUIState();
+                        scheduleRefresh();
+                    });
                 }
                 scheduleRefresh();
             }
