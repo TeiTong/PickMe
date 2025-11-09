@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PickMe
 // @namespace    http://tampermonkey.net/
-// @version      3.3.0
+// @version      3.4.0
 // @description  Plugin d'aide à la navigation pour les membres du discord Amazon Vine FR : https://discord.gg/amazonvinefr
 // @author       Créateur/Codeur principal : MegaMan / Codeur secondaire : Sulff / Testeurs : Louise, JohnnyBGoody, L'avocat du Diable et Popato (+ du code de lelouch_di_britannia, FMaz008 et Thorvarium)
 // @match        https://www.amazon.fr/vine/vine-items
@@ -126,7 +126,7 @@ NOTES:
         //Page du passage de commande du nouveau checkout
         //Pour tester si le checkout provient bien d'une page vine
         const previousPage = document.referrer;
-        const url_checkout = window.location.href;
+        const CHECKOUT_PAGE_PATTERN = /^https:\/\/www\.amazon\.fr\/checkout\/p\/p-/;
 
         //Page de checkout
         function checkOut(currentUrl) {
@@ -169,6 +169,450 @@ NOTES:
                 GM_deleteValue("asinParentCheckout");
                 GM_deleteValue("queueCheckout");
             }
+        }
+
+        //Détection d'un risque de frais de douane sur la page de checkout
+        function initCustomsAlert() {
+            if (!CHECKOUT_PAGE_PATTERN.test(window.location.href)) {
+                return;
+            }
+
+            const ALERT_ID = 'pm-customs-alert';
+            const ALERT_STYLE_ID = `${ALERT_ID}-style`;
+
+            function normalizeText(text) {
+                if (!text) {
+                    return '';
+                }
+
+                const lowerCase = text.toLowerCase();
+                const normalized = typeof lowerCase.normalize === 'function' ? lowerCase.normalize('NFD') : lowerCase;
+
+                return normalized
+                    .replace(/[\u0300-\u036f]/g, '')
+                    .replace(/["'’`]/g, ' ')
+                    .replace(/[^a-z0-9]+/g, ' ')
+                    .trim();
+            }
+
+            const CUSTOMS_WARNING_PHRASES = [
+                'Cette commande contient un ou plusieurs articles vendus et expédiés depuis l’étranger.',
+                'frais d’importation',
+                'dédouaner le colis',
+                'expédition à l’international'
+            ];
+
+            const NORMALIZED_CUSTOMS_WARNING_PHRASES = CUSTOMS_WARNING_PHRASES
+                .map(phrase => normalizeText(phrase))
+                .filter(Boolean);
+
+            function textContainsCustomsWarning(text) {
+                const normalized = normalizeText(text);
+                if (!normalized) {
+                    return false;
+                }
+
+                return NORMALIZED_CUSTOMS_WARNING_PHRASES.some(phrase => normalized.includes(phrase));
+            }
+
+            function ensureAlertStyle() {
+                if (document.getElementById(ALERT_STYLE_ID)) {
+                    return;
+                }
+
+                const style = document.createElement('style');
+                style.id = ALERT_STYLE_ID;
+                style.textContent = `
+                    #${ALERT_ID} {
+                        background-color: #fff4d6;
+                        border: 2px solid #f0a202;
+                        border-radius: 12px;
+                        color: #1f1f1f;
+                        padding: 12px 16px;
+                        margin: 16px 0;
+                        display: flex;
+                        align-items: center;
+                        gap: 12px;
+                        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+                        font-size: 14px;
+                        line-height: 1.5;
+                    }
+
+                    #${ALERT_ID} .pm-customs-alert__icon {
+                        font-size: 24px;
+                    }
+
+                    #${ALERT_ID} .pm-customs-alert__content {
+                        flex: 1 1 auto;
+                    }
+
+                    #${ALERT_ID} .pm-customs-alert__content strong {
+                        display: block;
+                        font-size: 16px;
+                        margin-bottom: 4px;
+                    }
+                `;
+                document.head.appendChild(style);
+            }
+
+            function injectAlert() {
+                if (document.getElementById(ALERT_ID)) {
+                    return true;
+                }
+
+                const referenceContainer = document.querySelector('#a-page') || document.body;
+                if (!referenceContainer) {
+                    return false;
+                }
+
+                ensureAlertStyle();
+
+                const alert = document.createElement('div');
+                alert.id = ALERT_ID;
+                alert.innerHTML = `
+                    <span class="pm-customs-alert__icon">⚠️</span>
+                    <div class="pm-customs-alert__content">
+                        <strong>Attention : frais de douane possibles</strong>
+                        <span>Cette commande contient un article susceptible d’être expédié depuis l’étranger. Des droits ou taxes supplémentaires peuvent être réclamés à la livraison. Vérifiez bien le détail de votre commande avant de valider.</span>
+                    </div>
+                `;
+
+                referenceContainer.prepend(alert);
+                return true;
+            }
+
+            function detectCustomsWarning(textCandidate) {
+                if (document.getElementById(ALERT_ID)) {
+                    return true;
+                }
+
+                if (textCandidate && textContainsCustomsWarning(textCandidate)) {
+                    return injectAlert();
+                }
+
+                if (!textCandidate && document.body && textContainsCustomsWarning(document.body.textContent)) {
+                    return injectAlert();
+                }
+
+                return false;
+            }
+
+            if (detectCustomsWarning()) {
+                return;
+            }
+
+            const observerTarget = document.body || document.documentElement;
+            if (!observerTarget) {
+                return;
+            }
+
+            const observer = new MutationObserver(mutations => {
+                for (const mutation of mutations) {
+                    if (mutation.type === 'childList') {
+                        for (const node of mutation.addedNodes) {
+                            const textContent = node && typeof node.textContent === 'string' ? node.textContent : '';
+                            if (textContent && detectCustomsWarning(textContent)) {
+                                observer.disconnect();
+                                return;
+                            }
+                        }
+                    } else if (mutation.type === 'characterData') {
+                        const targetText = mutation.target && typeof mutation.target.textContent === 'string'
+                            ? mutation.target.textContent
+                            : '';
+                        if (targetText && detectCustomsWarning(targetText)) {
+                            observer.disconnect();
+                            return;
+                        }
+                    }
+                }
+
+                if (detectCustomsWarning()) {
+                    observer.disconnect();
+                }
+            });
+
+            observer.observe(observerTarget, { childList: true, subtree: true, characterData: true });
+            setTimeout(() => observer.disconnect(), 30000);
+        }
+
+        function initBalanceDueAlert() {
+            if (!CHECKOUT_PAGE_PATTERN.test(window.location.href)) {
+                return;
+            }
+
+            if (!previousPage || !previousPage.includes('vine-items')) {
+                return;
+            }
+
+            const ALERT_ID = 'pm-balance-alert';
+            const STYLE_ID = `${ALERT_ID}-style`;
+            const HIGHLIGHT_CONTAINER_CLASS = 'pm-balance-warning-container';
+
+            function ensureStyle() {
+                if (document.getElementById(STYLE_ID)) {
+                    return;
+                }
+
+                const style = document.createElement('style');
+                style.id = STYLE_ID;
+                style.textContent = `
+                    #${ALERT_ID} {
+                        background-color: #ffe8e6;
+                        border: 2px solid #cc1b1b;
+                        border-radius: 12px;
+                        color: #1f1f1f;
+                        padding: 12px 16px;
+                        margin: 16px 0;
+                        display: flex;
+                        align-items: center;
+                        gap: 12px;
+                        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+                        font-size: 14px;
+                        line-height: 1.5;
+                    }
+
+                    #${ALERT_ID} .pm-balance-alert__icon {
+                        font-size: 24px;
+                    }
+
+                    #${ALERT_ID} .pm-balance-alert__content strong {
+                        display: block;
+                        font-size: 16px;
+                        margin-bottom: 4px;
+                    }
+
+                    #${ALERT_ID} .pm-balance-alert__amount {
+                        color: #b12704;
+                        font-weight: 700;
+                    }
+
+                    .${HIGHLIGHT_CONTAINER_CLASS} .pm-balance-warning-wrapper {
+                        display: inline-flex;
+                        align-items: center;
+                        gap: 8px;
+                        color: #b12704;
+                        font-weight: 700;
+                    }
+
+                    .${HIGHLIGHT_CONTAINER_CLASS} .pm-balance-warning-icon {
+                        font-size: 18px;
+                    }
+                `;
+                document.head.appendChild(style);
+            }
+
+            function parseEuroAmount(text) {
+                if (!text) {
+                    return null;
+                }
+
+                let sanitized = text
+                    .replace(/\u00a0/g, '')
+                    .replace(/€/g, '')
+                    .replace(/\s/g, '')
+                    .trim();
+
+                if (!sanitized) {
+                    return null;
+                }
+
+                if (sanitized.includes(',')) {
+                    sanitized = sanitized.replace(/\./g, '');
+                    sanitized = sanitized.replace(',', '.');
+                }
+
+                const value = parseFloat(sanitized);
+                if (!Number.isFinite(value)) {
+                    const fallback = sanitized.replace(/[^0-9.-]/g, '');
+                    const fallbackValue = parseFloat(fallback);
+                    return Number.isFinite(fallbackValue) ? fallbackValue : null;
+                }
+
+                return value;
+            }
+
+            function findBalanceContainer() {
+                const prioritizedContainer = document.querySelector('li.grand-total-cell .order-summary-line-definition');
+                if (prioritizedContainer) {
+                    const text = prioritizedContainer.textContent || '';
+                    return {
+                        container: prioritizedContainer,
+                        amountText: text,
+                        amountValue: parseEuroAmount(text)
+                    };
+                }
+
+                const labelCandidates = document.querySelectorAll('.order-summary-line-term .break-word');
+                for (const candidate of labelCandidates) {
+                    const labelText = candidate && candidate.textContent ? candidate.textContent : '';
+                    if (!labelText || !/montant\s+total/i.test(labelText)) {
+                        continue;
+                    }
+
+                    const grid = candidate.closest('.order-summary-grid');
+                    if (!grid) {
+                        continue;
+                    }
+
+                    const container = grid.querySelector('.order-summary-line-definition');
+                    if (!container) {
+                        continue;
+                    }
+
+                    const text = container.textContent || '';
+                    return {
+                        container,
+                        amountText: text,
+                        amountValue: parseEuroAmount(text)
+                    };
+                }
+
+                return null;
+            }
+
+            function injectBanner(amountText) {
+                const normalizedAmount = (amountText || '').replace(/\u00a0/g, ' ').trim();
+                ensureStyle();
+
+                const existing = document.getElementById(ALERT_ID);
+                if (existing) {
+                    const amountSpan = existing.querySelector('.pm-balance-alert__amount');
+                    if (amountSpan) {
+                        amountSpan.textContent = normalizedAmount;
+                    }
+                    return;
+                }
+
+                const referenceContainer = document.querySelector('#a-page') || document.body;
+                if (!referenceContainer) {
+                    return;
+                }
+
+                const alert = document.createElement('div');
+                alert.id = ALERT_ID;
+
+                const icon = document.createElement('span');
+                icon.className = 'pm-balance-alert__icon';
+                icon.textContent = '⚠️';
+
+                const content = document.createElement('div');
+                content.className = 'pm-balance-alert__content';
+
+                const title = document.createElement('strong');
+                title.textContent = 'Attention : reste à payer';
+
+                const message = document.createElement('span');
+                message.appendChild(document.createTextNode('Cette commande Vine comporte un reste à payer de '));
+
+                const amountSpan = document.createElement('span');
+                amountSpan.className = 'pm-balance-alert__amount';
+                amountSpan.textContent = normalizedAmount;
+
+                const suffix = document.createTextNode('. Assurez-vous de vouloir continuer avant de valider.');
+
+                message.appendChild(amountSpan);
+                message.appendChild(suffix);
+
+                content.appendChild(title);
+                content.appendChild(message);
+
+                alert.appendChild(icon);
+                alert.appendChild(content);
+
+                referenceContainer.prepend(alert);
+            }
+
+            function highlightAmount(container, amountText) {
+                ensureStyle();
+                container.classList.add(HIGHLIGHT_CONTAINER_CLASS);
+
+                if (container.querySelector('.pm-balance-warning-wrapper')) {
+                    const amountNode = container.querySelector('.pm-balance-warning-amount');
+                    if (amountNode) {
+                        amountNode.textContent = amountText.replace(/\u00a0/g, ' ').trim();
+                    }
+                    return;
+                }
+
+                const wrapper = document.createElement('span');
+                wrapper.className = 'pm-balance-warning-wrapper';
+
+                const icon = document.createElement('span');
+                icon.className = 'pm-balance-warning-icon';
+                icon.textContent = '⚠️';
+
+                const amountHolder = document.createElement('span');
+                amountHolder.className = 'pm-balance-warning-amount';
+
+                while (container.firstChild) {
+                    amountHolder.appendChild(container.firstChild);
+                }
+
+                wrapper.appendChild(icon);
+                wrapper.appendChild(amountHolder);
+                container.appendChild(wrapper);
+            }
+
+            function applyBalanceWarning(info) {
+                const normalizedAmount = (info.amountText || '').replace(/\u00a0/g, ' ').trim();
+                injectBanner(normalizedAmount);
+                highlightAmount(info.container, normalizedAmount);
+                info.container.dataset.pmBalanceWarningApplied = 'true';
+                info.container.dataset.pmBalanceAmount = normalizedAmount;
+            }
+
+            function processBalance() {
+                const info = findBalanceContainer();
+                if (!info || !info.container) {
+                    return false;
+                }
+
+                if (info.container.dataset.pmBalanceWarningApplied === 'true') {
+                    return true;
+                }
+
+                if (info.amountValue === null) {
+                    return false;
+                }
+
+                if (info.amountValue <= 0) {
+                    info.container.dataset.pmBalanceAmount = (info.amountText || '').replace(/\u00a0/g, ' ').trim();
+                    return false;
+                }
+
+                applyBalanceWarning(info);
+                return true;
+            }
+
+            if (processBalance()) {
+                return;
+            }
+
+            const observerTarget = document.body || document.documentElement;
+            if (!observerTarget) {
+                return;
+            }
+
+            const observer = new MutationObserver(() => {
+                if (processBalance()) {
+                    observer.disconnect();
+                }
+            });
+
+            observer.observe(observerTarget, { childList: true, subtree: true, characterData: true });
+            setTimeout(() => observer.disconnect(), 30000);
+        }
+
+        function initCheckoutAlerts() {
+            initCustomsAlert();
+            initBalanceDueAlert();
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initCheckoutAlerts);
+        } else {
+            initCheckoutAlerts();
         }
 
         //Pour surveiller la page checkout contenant l'id de commande car c'est une redirection
@@ -287,37 +731,127 @@ NOTES:
         }
 
         //Ajout du bouton
-        function addButton(asin) {
-            if (!document.querySelector('#pickme-button')) {
-                var priceContainer = document.querySelector('.basisPriceLegalMessage');
-                if (priceContainer) {
-                    const affiliateButton = createButton(asin);
-                    //Insérez le nouveau bouton dans le DOM juste après le conteneur de prix
-                    priceContainer.parentNode.insertBefore(affiliateButton, priceContainer.nextSibling);
-                } else {
-                    //priceContainer = document.querySelectorAll('snsPriceRow');
-                    //Selecteur du prix desktop ou mobile
-                    var priceContainerVar = document.getElementById('corePrice_desktop');
-                    if (!priceContainerVar) {
-                        priceContainerVar = document.getElementById('corePrice_mobile_feature_div');
-                        //Gestion pour les livres
-                        if (!priceContainerVar) {
-                            priceContainer = document.getElementById("bookDescription_feature_div");
-                            if (priceContainer) {
-                                const affiliateButton = createButton(asin);
-                                priceContainer.parentNode.insertBefore(affiliateButton, priceContainer);
-                            }
+        function isElementVisible(element) {
+            if (!element) {
+                return false;
+            }
+
+            if (typeof element.offsetParent !== 'undefined') {
+                if (element.offsetParent !== null) {
+                    return true;
+                }
+            }
+
+            const rects = element.getClientRects();
+            return rects && rects.length > 0;
+        }
+
+        function findButtonPlacement() {
+            const candidates = [
+                {
+                    selector: '#buyboxAccordion .a-accordion-active .basisPriceLegalMessage',
+                    getPlacement: element => ({ type: 'after', node: element })
+                },
+                {
+                    selector: '.basisPriceLegalMessage',
+                    getPlacement: element => ({ type: 'after', node: element })
+                },
+                {
+                    selector: '#buyboxAccordion .a-accordion-active .priceToPay',
+                    getPlacement: element => {
+                        const parentSection = element.closest('.a-section');
+                        if (parentSection && isElementVisible(parentSection)) {
+                            return { type: 'append', node: parentSection };
                         }
-                    } else {
-                        priceContainer = priceContainerVar.querySelector('.a-span12');
-                        if (priceContainer) {
-                            const affiliateButton = createButton(asin);
-                            //priceContainer.parentNode.insertAdjacentElement('afterend', affiliateButton);
-                            priceContainer.parentNode.insertAdjacentElement('beforeend', affiliateButton);
-                        }
+                        return null;
+                    }
+                },
+                {
+                    selector: '#corePrice_desktop .a-span12',
+                    getPlacement: element => {
+                        const parent = element.parentNode || element;
+                        return { type: 'append', node: parent };
+                    }
+                },
+                {
+                    selector: '#corePrice_mobile_feature_div',
+                    getPlacement: element => ({ type: 'append', node: element })
+                },
+                {
+                    selector: '#bookDescription_feature_div',
+                    getPlacement: element => ({ type: 'before', node: element })
+                }
+            ];
+
+            for (const candidate of candidates) {
+                const elements = Array.from(document.querySelectorAll(candidate.selector));
+                for (const element of elements) {
+                    if (!isElementVisible(element)) {
+                        continue;
+                    }
+
+                    const placement = candidate.getPlacement(element);
+                    if (placement) {
+                        return placement;
                     }
                 }
             }
+
+            return null;
+        }
+
+        function updateButtonLink(asin) {
+            const affiliateAnchor = document.querySelector('#pickme-button');
+            if (affiliateAnchor && !isAffiliateTagPresent()) {
+                affiliateAnchor.href = baseUrlPickme + `/monsieurconso/product.php?asin=${asin}`;
+            }
+        }
+
+        function insertButtonContainer(container, placement) {
+            if (!placement || !placement.node) {
+                return;
+            }
+
+            if (placement.type === 'after') {
+                const parentNode = placement.node.parentNode;
+                if (!parentNode) {
+                    return;
+                }
+                if (container.parentNode !== parentNode || container.previousSibling !== placement.node) {
+                    parentNode.insertBefore(container, placement.node.nextSibling);
+                }
+            } else if (placement.type === 'append') {
+                if (container.parentNode !== placement.node) {
+                    placement.node.appendChild(container);
+                } else if (container !== placement.node.lastElementChild) {
+                    placement.node.appendChild(container);
+                }
+            } else if (placement.type === 'before') {
+                const parentNode = placement.node.parentNode;
+                if (!parentNode) {
+                    return;
+                }
+                if (container.parentNode !== parentNode || container.nextSibling !== placement.node) {
+                    parentNode.insertBefore(container, placement.node);
+                }
+            }
+        }
+
+        function addButton(asin) {
+            const placement = findButtonPlacement();
+            if (!placement) {
+                return;
+            }
+
+            let buttonContainer = document.querySelector('#pickme-button-container');
+
+            if (!buttonContainer) {
+                buttonContainer = createButton(asin);
+            } else {
+                updateButtonLink(asin);
+            }
+
+            insertButtonContainer(buttonContainer, placement);
         }
 
         function submitPost(asin) {
@@ -339,6 +873,7 @@ NOTES:
 
         function createButton(asin) {
             var container = document.createElement('div'); //Créer un conteneur pour le bouton et le texte d'explication
+            container.id = 'pickme-button-container';
             container.style.display = 'inline-flex';
             container.style.alignItems = 'center';
 
@@ -380,7 +915,7 @@ NOTES:
                 infoText.style.cursor = 'pointer';
                 infoText.style.fontSize = '14px';
                 infoText.onclick = function() {
-                    alert("Ce bouton permet de soutenir le discord Amazon Vine FR. Il n'y a strictement aucune conséquence sur votre achat, mise à part d'aider à maintenir les services du discord et de PickMe.\n\nComment faire ?\n\nIl suffit de cliquer sur 'Acheter via PickMe' et dans la nouvelle fenêtre de cliquer sur 'Acheter sur Amazon'. Normalement le bouton sera devenu vert, il suffit alors d'ajouter le produit au panier (uniquement quand le bouton est vert) et c'est tout !\nMerci beaucoup !");
+                    alert("Ce bouton permet de soutenir le discord Amazon Vine FR. Il n'y a strictement aucune conséquence sur votre achat, mise à part d'aider à maintenir les services du discord et de PickMe.\nVous pourrez réclamer votre achat sur PickMe Web d'ici 24h afin d'augmenter votre score d'activité et éviter d'être AFK.\n\nComment faire ?\n\nIl suffit de cliquer sur 'Acheter via PickMe' et dans la nouvelle fenêtre de cliquer sur 'Acheter sur Amazon'. Normalement le bouton sera devenu vert, il suffit alors d'ajouter le produit au panier (uniquement quand le bouton est vert) et c'est tout !\nMerci beaucoup !");
                 };
                 container.appendChild(affiliateButton);
                 container.appendChild(infoText);
@@ -1431,11 +1966,11 @@ NOTES:
             let hideBas = GM_getValue('hideBas', true);
             let statsInReviews = GM_getValue('statsInReviews', false);
 
-            let enableRefresh = GM_getValue('enableRefresh', true);
-            let pageToRefresh = GM_getValue('pageToRefresh', 'current');
-            let refreshDelay = GM_getValue('refreshDelay', 5);
-            let randomDelay = GM_getValue('randomDelay', 15);
-            let useFixedHour = GM_getValue('useFixedHour', true);
+            let defaultEnableRefresh = GM_getValue('enableRefresh', true);
+            let defaultPageToRefresh = GM_getValue('pageToRefresh', 'current');
+            let defaultRefreshDelay = GM_getValue('refreshDelay', 5);
+            let defaultRandomDelay = GM_getValue('randomDelay', 15);
+            let defaultUseFixedHour = GM_getValue('useFixedHour', true);
 
             //Options avancées
             let onlyETV = GM_getValue('onlyETV', false);
@@ -1607,11 +2142,11 @@ NOTES:
             GM_setValue("hideBas", hideBas);
             GM_setValue("statsInReviews", statsInReviews);
 
-            GM_setValue("enableRefresh", enableRefresh);
-            GM_setValue("pageToRefresh", pageToRefresh);
-            GM_setValue("refreshDelay", refreshDelay);
-            GM_setValue("randomDelay", randomDelay);
-            GM_setValue("useFixedHour", useFixedHour);
+            GM_setValue("enableRefresh", defaultEnableRefresh);
+            GM_setValue("pageToRefresh", defaultPageToRefresh);
+            GM_setValue("refreshDelay", defaultRefreshDelay);
+            GM_setValue("randomDelay", defaultRandomDelay);
+            GM_setValue("useFixedHour", defaultUseFixedHour);
 
             //Options avancées
             GM_setValue("onlyETV", onlyETV);
@@ -1899,6 +2434,87 @@ NOTES:
                 }
             }
 
+            function hexToRgba(hex, alpha = 0.5) {
+                if (!hex || typeof hex !== 'string') {
+                    return `rgba(255, 255, 255, ${alpha})`;
+                }
+
+                let normalized = hex.trim();
+                if (!normalized.startsWith('#')) {
+                    normalized = `#${normalized}`;
+                }
+
+                if (!/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(normalized)) {
+                    return `rgba(255, 255, 255, ${alpha})`;
+                }
+
+                normalized = normalized.slice(1);
+                if (normalized.length === 3) {
+                    normalized = normalized.split('').map((char) => char + char).join('');
+                }
+
+                const r = parseInt(normalized.substr(0, 2), 16);
+                const g = parseInt(normalized.substr(2, 2), 16);
+                const b = parseInt(normalized.substr(4, 2), 16);
+
+                return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+            }
+
+            function getPreviewLinkColor() {
+                const selectors = [
+                    '.vvp-item-product-title-container a.a-link-normal',
+                    '#vvp-items .a-link-normal',
+                    'a.a-link-normal',
+                    'a'
+                ];
+
+                for (const selector of selectors) {
+                    const element = document.querySelector(selector);
+                    if (element) {
+                        const computedColor = window.getComputedStyle(element).color;
+                        if (computedColor) {
+                            return computedColor;
+                        }
+                    }
+                }
+
+                return '#0073bb';
+            }
+
+            function injectHighlightPreviewStyles(popupElement, baseBackground, borderColor, textColor) {
+                const styleElement = document.createElement('style');
+                styleElement.textContent = `
+        #colorPickerPopup .pm-preview-card {
+            position: relative;
+            border-radius: 8px;
+            border: 1px solid ${borderColor};
+            background-color: ${baseBackground};
+            padding: 12px;
+            text-align: center;
+            color: ${textColor};
+            overflow: hidden;
+        }
+
+        #colorPickerPopup .pm-preview-card + .pm-preview-card {
+            margin-top: 10px;
+        }
+
+        #colorPickerPopup .pm-preview-overlay {
+            position: absolute;
+            inset: 0;
+            border-radius: inherit;
+            pointer-events: none;
+        }
+
+        #colorPickerPopup .pm-preview-text {
+            position: relative;
+            z-index: 1;
+        }
+    `;
+
+                popupElement.appendChild(styleElement);
+            }
+
             function setHighlightColor() {
 
                 //Pour la suite, on convertit la couleur RGBA existante en format hexadécimal pour <input type="color">.
@@ -1953,10 +2569,18 @@ NOTES:
         <div style="margin-bottom: 15px;">
             <label for="colorPickerNew" style="display: block;">Nouveau produit :</label>
             <input type="color" id="colorPickerNew" value="${hexColor}" style="width: 100%;">
+            <div class="pm-preview-card" data-type="new">
+                <div class="pm-preview-overlay"></div>
+                <span class="pm-preview-text">Produit de test</span>
+            </div>
         </div>
         <div style="margin-bottom: 15px;">
             <label for="colorPickerRepop" style="display: block;">Repop d'un produit :</label>
             <input type="color" id="colorPickerRepop" value="${hexColorRepop}" style="width: 100%;">
+            <div class="pm-preview-card" data-type="repop">
+                <div class="pm-preview-overlay"></div>
+                <span class="pm-preview-text">Produit de test</span>
+            </div>
         </div>
         <div class="button-container final-buttons">
             <button class="full-width" id="saveColor" style="width: 100%; margin-bottom: 5px;">Enregistrer</button>
@@ -1966,18 +2590,34 @@ NOTES:
 
                 document.body.appendChild(popup);
 
+                const isDarkTheme = savedTheme === "dark";
+                const basePreviewBackground = isDarkTheme ? '#191919' : '#ffffff';
+                const basePreviewBorder = isDarkTheme ? '#2a2a2a' : '#d5d9d9';
+                const previewLinkColor = getPreviewLinkColor();
+                injectHighlightPreviewStyles(popup, basePreviewBackground, basePreviewBorder, previewLinkColor);
+
+                const updatePreviewOverlay = (type, colorValue) => {
+                    const overlay = popup.querySelector(`.pm-preview-card[data-type="${type}"] .pm-preview-overlay`);
+                    if (overlay) {
+                        overlay.style.backgroundColor = colorValue;
+                    }
+                };
+
+                updatePreviewOverlay('new', highlightColor || hexToRgba(hexColor));
+                updatePreviewOverlay('repop', highlightColorRepop || hexToRgba(hexColorRepop));
+
+                document.getElementById('colorPickerNew').addEventListener('input', function(e) {
+                    updatePreviewOverlay('new', hexToRgba(e.target.value));
+                });
+
+                document.getElementById('colorPickerRepop').addEventListener('input', function(e) {
+                    updatePreviewOverlay('repop', hexToRgba(e.target.value));
+                });
+
                 document.getElementById('saveColor').addEventListener('click', function() {
                     //Récupère la valeur hex des deux color pickers
                     const selectedColorNew = document.getElementById('colorPickerNew').value;
                     const selectedColorRepop = document.getElementById('colorPickerRepop').value;
-
-                    //Convertit en RGBA
-                    const hexToRgba = (hex) => {
-                        const r = parseInt(hex.substr(1, 2), 16);
-                        const g = parseInt(hex.substr(3, 2), 16);
-                        const b = parseInt(hex.substr(5, 2), 16);
-                        return `rgba(${r}, ${g}, ${b}, 0.5)`;
-                    };
 
                     const rgbaColorNew = hexToRgba(selectedColorNew);
                     const rgbaColorRepop = hexToRgba(selectedColorRepop);
@@ -2032,6 +2672,10 @@ NOTES:
                 popup.innerHTML = `
           <h2 id="configPopupHeader">Couleur de surbrillance des produits filtrés<span id="closeColorPicker" style="float: right; cursor: pointer;">&times;</span></h2>
         <input type="color" id="colorPicker" value="${hexColor}" style="width: 100%;">
+        <div class="pm-preview-card" data-type="fav">
+            <div class="pm-preview-overlay"></div>
+            <span class="pm-preview-text">Produit de test</span>
+        </div>
         <div class="button-container final-buttons">
             <button class="full-width" id="saveColor">Enregistrer</button>
             <button class="full-width" id="closeColor">Fermer</button>
@@ -2040,14 +2684,29 @@ NOTES:
 
                 document.body.appendChild(popup);
 
+                const isDarkTheme = savedTheme === "dark";
+                const basePreviewBackground = isDarkTheme ? '#191919' : '#ffffff';
+                const basePreviewBorder = isDarkTheme ? '#2a2a2a' : '#d5d9d9';
+                const previewLinkColor = getPreviewLinkColor();
+                injectHighlightPreviewStyles(popup, basePreviewBackground, basePreviewBorder, previewLinkColor);
+
+                const overlay = popup.querySelector('.pm-preview-card[data-type="fav"] .pm-preview-overlay');
+                if (overlay) {
+                    overlay.style.backgroundColor = highlightColorFav || hexToRgba(hexColor);
+                }
+
+                const colorPickerElement = document.getElementById('colorPicker');
+                colorPickerElement.addEventListener('input', function(event) {
+                    if (overlay) {
+                        overlay.style.backgroundColor = hexToRgba(event.target.value);
+                    }
+                });
+
                 //Ajoute des écouteurs d'événement pour les boutons
                 document.getElementById('saveColor').addEventListener('click', function() {
                     const selectedColor = document.getElementById('colorPicker').value;
                     //Convertir la couleur hexadécimale en RGBA pour la transparence
-                    const r = parseInt(selectedColor.substr(1, 2), 16);
-                    const g = parseInt(selectedColor.substr(3, 2), 16);
-                    const b = parseInt(selectedColor.substr(5, 2), 16);
-                    const rgbaColor = `rgba(${r}, ${g}, ${b}, 0.5)`;
+                    const rgbaColor = hexToRgba(selectedColor);
 
                     //Stocker la couleur sélectionnée
                     GM_setValue("highlightColorFav", rgbaColor);
@@ -2116,6 +2775,7 @@ NOTES:
                 show: 'j',
                 sync: '',
                 previousPage: 'a',
+                homePage: '&',
                 nextPage: 'e'
             };
 
@@ -2130,6 +2790,7 @@ NOTES:
                     show: GM_getValue('keyShow', defaultKeys.show),
                     sync: GM_getValue('keySync', defaultKeys.sync),
                     previousPage: GM_getValue('keyPrevPage', defaultKeys.previousPage),
+                    homePage: GM_getValue('keyHomePage', defaultKeys.homePage),
                     nextPage: GM_getValue('keyNextPage', defaultKeys.nextPage)
                 };
             }
@@ -2199,6 +2860,9 @@ NOTES:
                 const keys = getKeyConfig();
                 if (keys.previousPage && e.key === keys.previousPage) {
                     simulerClicSurBouton('boutonCacherPrecedentHaut');
+                }
+                else if (keys.homePage && e.key === keys.homePage) {
+                    simulerClicSurBouton('boutonRetourAccueilHaut');
                 }
                 else if (keys.nextPage && e.key === keys.nextPage) {
                     simulerClicSurBouton('boutonCacherSuivantHaut');
@@ -2806,6 +3470,7 @@ NOTES:
                     boutonToutAfficher.id = `boutonToutAfficher${position}`;
 
                     let boutonCacherPrecedent = null;
+                    let boutonRetourAccueil = null;
                     let boutonCacherSuivant = null;
                     let navigationWrapper = null;
 
@@ -2826,6 +3491,14 @@ NOTES:
                             navigationWrapper.appendChild(boutonCacherPrecedent);
                         }
 
+                        boutonRetourAccueil = document.createElement('button');
+                        boutonRetourAccueil.textContent = '↩';
+                        boutonRetourAccueil.classList.add('bouton-action');
+                        boutonRetourAccueil.id = `boutonRetourAccueil${position}`;
+                        boutonRetourAccueil.title = 'Tout cacher puis revenir à la première page';
+                        boutonRetourAccueil.setAttribute('aria-label', 'Tout cacher puis revenir à la première page');
+                        navigationWrapper.appendChild(boutonRetourAccueil);
+
                         boutonCacherSuivant = document.createElement('button');
                         boutonCacherSuivant.textContent = '⏭';
                         boutonCacherSuivant.classList.add('bouton-action');
@@ -2839,7 +3512,7 @@ NOTES:
                         }
                     }
 
-                    return { boutonVisibles, boutonCaches, boutonCacherTout, boutonToutAfficher, boutonCacherPrecedent, boutonCacherSuivant, navigationWrapper };
+                    return { boutonVisibles, boutonCaches, boutonCacherTout, boutonToutAfficher, boutonCacherPrecedent, boutonRetourAccueil, boutonCacherSuivant, navigationWrapper };
                 }
 
                 //Fonction pour synchroniser les boutons haut et bas
@@ -2969,6 +3642,20 @@ NOTES:
 
                 if (hideNavigationActive) {
                     const liensPagination = recupererLiensPagination();
+                    const urlPremierePage = (() => {
+                        const urlActuelle = new URL(window.location.href);
+                        const pageParam = urlActuelle.searchParams.get('page');
+                        if (!pageParam || pageParam === '1') {
+                            if (urlActuelle.searchParams.has('page')) {
+                                urlActuelle.searchParams.delete('page');
+                                const nouvelleUrl = urlActuelle.toString();
+                                return nouvelleUrl !== window.location.href ? nouvelleUrl : null;
+                            }
+                            return null;
+                        }
+                        urlActuelle.searchParams.delete('page');
+                        return urlActuelle.toString();
+                    })();
                     const appliquerEtatApresCacher = () => {
                         boutonsHaut.boutonCacherTout.style.display = '';
                         boutonsHaut.boutonToutAfficher.style.display = 'none';
@@ -3004,9 +3691,26 @@ NOTES:
                         });
                     };
 
+                    const attacherRetourAccueil = (bouton, urlCible) => {
+                        if (!bouton) {
+                            return;
+                        }
+                        if (!urlCible) {
+                            desactiverBoutonNavigation(bouton);
+                            return;
+                        }
+                        bouton.addEventListener('click', () => {
+                            toggleTousLesProduits(true);
+                            appliquerEtatApresCacher();
+                            window.location.href = urlCible;
+                        });
+                    };
+
                     attacherNavigation(boutonsHaut.boutonCacherPrecedent, liensPagination.precedent);
+                    attacherRetourAccueil(boutonsHaut.boutonRetourAccueil, urlPremierePage);
                     attacherNavigation(boutonsHaut.boutonCacherSuivant, liensPagination.suivant);
                     attacherNavigation(boutonsBas.boutonCacherPrecedent, liensPagination.precedent);
+                    attacherRetourAccueil(boutonsBas.boutonRetourAccueil, urlPremierePage);
                     attacherNavigation(boutonsBas.boutonCacherSuivant, liensPagination.suivant);
                 }
 
@@ -6570,6 +7274,7 @@ ${addressOptions.length && isPlus && apiOk ? `
         ${createKeyInput('keyHide', 'Tout cacher')}
         ${createKeyInput('keyShow', 'Tout montrer')}
         ${createKeyInput('keyPrevPage', 'Tout cacher puis revenir à la page précédente (⏮)')}
+        ${createKeyInput('keyHomePage', 'Tout cacher puis revenir à la première page (↩)')}
         ${createKeyInput('keyNextPage', 'Tout cacher puis passer à la page suivante (⏭)')}
         ${createKeyInput('keySync', 'Synchroniser les produits avec le serveur et tout cacher')}
 <div class="button-container final-buttons">
@@ -6603,7 +7308,7 @@ ${addressOptions.length && isPlus && apiOk ? `
 
             //Fonction pour enregistrer la configuration des touches
             function saveKeyConfig() {
-                const keys = ['keyLeft', 'keyRight', 'keyUp', 'keyDown', 'keyHide', 'keyShow', 'keyPrevPage', 'keyNextPage', 'keySync'];
+                const keys = ['keyLeft', 'keyRight', 'keyUp', 'keyDown', 'keyHide', 'keyShow', 'keyPrevPage', 'keyHomePage', 'keyNextPage', 'keySync'];
                 keys.forEach(key => {
                     const inputValue = document.getElementById(key).value;
                     GM_setValue(key, inputValue);
@@ -7649,7 +8354,7 @@ ${addressOptions.length && isPlus && apiOk ? `
                 ajouterOptionCheckbox('shareOnlyShow', 'Ne pas partager les produits cachés, seulement les visibles');
 
                 ajouterSousTitre('Auto-refresh');
-                ajouterOptionCheckbox('autoRefreshLimitToFirstTab', 'Désactiver le refresh dès le second onglet (et les suivants), il ne sera alors actif que dans le premier déjà ouvert');
+                ajouterOptionCheckbox('autoRefreshLimitToFirstTab', 'Activer le principe d\'onglet principal et secondaire. Un onglet secondaire à ses propres paramètres mais qui sont éphémères (perdu à la fermeture de l\'onglet), le refresh y est désactivé par défaut');
                 ajouterOptionCheckbox('autoRefreshTimeSlot', 'Activer le refresh uniquement pendant la plage horaire (hors refresh horaire)');
                 ajouterOptionTexte('timeSlotStart', 'Heure début (format HH:mm)', '02:00');
                 ajouterOptionTexte('timeSlotEnd', 'Heure fin (format HH:mm)', '14:00');
@@ -8036,6 +8741,10 @@ ${addressOptions.length && isPlus && apiOk ? `
                                 }, 2000);
                                 return {status: response.status, responseText: text};
                             });
+                        } else if (response.status === 400) {
+                            const syncButton = document.getElementById('syncFavConfig');
+                            syncButton.innerHTML = 'Les mot-clés doivent contenir au moins 3 caractères pour être synchronisés.';
+                            return "Non autorisé";
                         } else if (response.status === 201) {
                             const syncButton = document.getElementById('syncFavConfig');
                             syncButton.innerHTML = 'Non autorisé';
@@ -12405,12 +13114,39 @@ ${addressOptions.length && isPlus && apiOk ? `
 
             const AUTO_REFRESH_PRIMARY_KEY = 'autoRefreshPrimaryTab';
             const AUTO_REFRESH_TAB_ID_KEY = 'pickmeAutoRefreshTabId';
+            const AUTO_REFRESH_SECONDARY_LOCK_KEY = 'pmAutoRefreshSecondaryLock';
             const AUTO_REFRESH_HEARTBEAT_INTERVAL = 15000;
             const AUTO_REFRESH_STALE_THRESHOLD = 45000;
             const autoRefreshTabId = getAutoRefreshTabId();
             let autoRefreshHeartbeatId = null;
             let autoRefreshMonitorId = null;
             let isPrimaryAutoRefreshTab = !autoRefreshLimitToFirstTab;
+
+            function setSecondaryAutoRefreshLock(enabled) {
+                if (!autoRefreshLimitToFirstTab) {
+                    return;
+                }
+                try {
+                    if (enabled) {
+                        sessionStorage.setItem(AUTO_REFRESH_SECONDARY_LOCK_KEY, 'true');
+                    } else {
+                        sessionStorage.removeItem(AUTO_REFRESH_SECONDARY_LOCK_KEY);
+                    }
+                } catch (error) {
+                    // Ignore storage errors
+                }
+            }
+
+            function isSecondaryAutoRefreshLocked() {
+                if (!autoRefreshLimitToFirstTab) {
+                    return false;
+                }
+                try {
+                    return sessionStorage.getItem(AUTO_REFRESH_SECONDARY_LOCK_KEY) === 'true';
+                } catch (error) {
+                    return false;
+                }
+            }
 
             function getAutoRefreshTabId() {
                 const storageKey = AUTO_REFRESH_TAB_ID_KEY;
@@ -12498,20 +13234,45 @@ ${addressOptions.length && isPlus && apiOk ? `
             function attemptToRegisterPrimaryAutoRefreshTab() {
                 if (!autoRefreshLimitToFirstTab) {
                     isPrimaryAutoRefreshTab = true;
+                    setSecondaryAutoRefreshLock(false);
                     return true;
                 }
-                const stored = getStoredAutoRefreshPrimary();
+
+                let stored = getStoredAutoRefreshPrimary();
+                const secondaryLocked = isSecondaryAutoRefreshLocked();
+
+                if (stored && stored.id === autoRefreshTabId) {
+                    isPrimaryAutoRefreshTab = true;
+                    setSecondaryAutoRefreshLock(false);
+                    startAutoRefreshHeartbeat();
+                    stopAutoRefreshMonitor();
+                    return true;
+                }
+
+                if (secondaryLocked) {
+                    isPrimaryAutoRefreshTab = false;
+                    return false;
+                }
+
                 const now = Date.now();
-                if (!stored || isStoredPrimaryStale(stored) || stored.id === autoRefreshTabId) {
+                if (!stored || isStoredPrimaryStale(stored)) {
                     setStoredAutoRefreshPrimary({ id: autoRefreshTabId, timestamp: now });
-                    const confirmation = getStoredAutoRefreshPrimary();
-                    if (confirmation && confirmation.id === autoRefreshTabId) {
+                    stored = getStoredAutoRefreshPrimary();
+                    if (stored && stored.id === autoRefreshTabId) {
                         isPrimaryAutoRefreshTab = true;
+                        setSecondaryAutoRefreshLock(false);
                         startAutoRefreshHeartbeat();
                         stopAutoRefreshMonitor();
                         return true;
                     }
                 }
+
+                if (stored && stored.id !== autoRefreshTabId) {
+                    setSecondaryAutoRefreshLock(true);
+                } else {
+                    setSecondaryAutoRefreshLock(false);
+                }
+
                 isPrimaryAutoRefreshTab = false;
                 return false;
             }
@@ -12522,11 +13283,10 @@ ${addressOptions.length && isPlus && apiOk ? `
                 }
                 const stored = getStoredAutoRefreshPrimary();
                 if (stored && stored.id === autoRefreshTabId) {
-                    setStoredAutoRefreshPrimary(null);
+                    GM_deleteValue(AUTO_REFRESH_PRIMARY_KEY);
                 }
                 stopAutoRefreshHeartbeat();
                 stopAutoRefreshMonitor();
-                isPrimaryAutoRefreshTab = false;
             }
 
             if (autoRefreshLimitToFirstTab) {
@@ -12536,30 +13296,210 @@ ${addressOptions.length && isPlus && apiOk ? `
 
             //AutoRefresh
             function reloadAtNextFullHour() {
+                const TAB_SETTINGS_STORAGE_KEY = `pmAutoRefreshTabSettings-${autoRefreshTabId}`;
                 let refreshInterval;
                 let countdownDiv;
                 let optionsContainerElement = null;
                 let enableRefreshCheckboxElement = null;
                 let autoRefreshInfoBanner = null;
+                let headerRowElement = null;
+                let tabBadgeElement = null;
+                let controlsRowElement = null;
 
-                function updateAutoRefreshUIState() {
-                    if (!optionsContainerElement || !enableRefreshCheckboxElement) {
+                function loadTabSettings() {
+                    if (!autoRefreshLimitToFirstTab) {
+                        return null;
+                    }
+                    try {
+                        const raw = sessionStorage.getItem(TAB_SETTINGS_STORAGE_KEY);
+                        if (!raw) {
+                            return null;
+                        }
+                        const parsed = JSON.parse(raw);
+                        return (parsed && typeof parsed === 'object') ? parsed : null;
+                    } catch (error) {
+                        return null;
+                    }
+                }
+
+                function saveTabSettings(settings) {
+                    if (!autoRefreshLimitToFirstTab) {
                         return;
                     }
-                    if (autoRefreshLimitToFirstTab && !isPrimaryAutoRefreshTab) {
-                        enableRefreshCheckboxElement.disabled = true;
+                    try {
+                        sessionStorage.setItem(TAB_SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+                    } catch (error) {
+                        // Ignore storage errors (navigation privée, etc.)
+                    }
+                }
+
+                function clearTabSettings() {
+                    if (!autoRefreshLimitToFirstTab) {
+                        return;
+                    }
+                    try {
+                        sessionStorage.removeItem(TAB_SETTINGS_STORAGE_KEY);
+                    } catch (error) {
+                        // Ignore storage errors
+                    }
+                }
+
+                function mergeStoredSettings(base, stored) {
+                    if (!stored || typeof stored !== 'object') {
+                        return base;
+                    }
+                    const result = { ...base };
+                    if (typeof stored.enableRefresh === 'boolean') {
+                        result.enableRefresh = stored.enableRefresh;
+                    }
+                    if (typeof stored.pageToRefresh === 'string') {
+                        result.pageToRefresh = stored.pageToRefresh;
+                    }
+                    if (typeof stored.refreshDelay === 'number' && !Number.isNaN(stored.refreshDelay)) {
+                        result.refreshDelay = stored.refreshDelay;
+                    }
+                    if (typeof stored.randomDelay === 'number' && !Number.isNaN(stored.randomDelay)) {
+                        result.randomDelay = stored.randomDelay;
+                    }
+                    if (typeof stored.useFixedHour === 'boolean') {
+                        result.useFixedHour = stored.useFixedHour;
+                    }
+                    return result;
+                }
+
+                const hasPrimary = attemptToRegisterPrimaryAutoRefreshTab();
+                let isSecondaryTabWithEphemeralValues = autoRefreshLimitToFirstTab && !hasPrimary;
+
+                const defaultTabSettings = {
+                    enableRefresh: defaultEnableRefresh,
+                    pageToRefresh: defaultPageToRefresh,
+                    refreshDelay: defaultRefreshDelay,
+                    randomDelay: defaultRandomDelay,
+                    useFixedHour: defaultUseFixedHour,
+                };
+
+                const storedTabSettings = autoRefreshLimitToFirstTab ? loadTabSettings() : null;
+
+                let tabEnableRefresh = defaultTabSettings.enableRefresh;
+                let tabPageToRefresh = defaultTabSettings.pageToRefresh;
+                let tabRefreshDelay = defaultTabSettings.refreshDelay;
+                let tabRandomDelay = defaultTabSettings.randomDelay;
+                let tabUseFixedHour = defaultTabSettings.useFixedHour;
+
+                if (isSecondaryTabWithEphemeralValues) {
+                    if (storedTabSettings) {
+                        const merged = mergeStoredSettings(defaultTabSettings, storedTabSettings);
+                        tabEnableRefresh = merged.enableRefresh;
+                        tabPageToRefresh = merged.pageToRefresh;
+                        tabRefreshDelay = merged.refreshDelay;
+                        tabRandomDelay = merged.randomDelay;
+                        tabUseFixedHour = merged.useFixedHour;
+                    } else {
+                        tabEnableRefresh = false;
+                        tabUseFixedHour = false;
+                    }
+                } else {
+                    clearTabSettings();
+                }
+
+                function getCurrentTabSettingsSnapshot() {
+                    return {
+                        enableRefresh: tabEnableRefresh,
+                        pageToRefresh: tabPageToRefresh,
+                        refreshDelay: tabRefreshDelay,
+                        randomDelay: tabRandomDelay,
+                        useFixedHour: tabUseFixedHour,
+                    };
+                }
+
+                function updateDefaultSetting(key, value) {
+                    switch (key) {
+                        case 'enableRefresh':
+                            defaultEnableRefresh = value;
+                            GM_setValue('enableRefresh', value);
+                            break;
+                        case 'pageToRefresh':
+                            defaultPageToRefresh = value;
+                            GM_setValue('pageToRefresh', value);
+                            break;
+                        case 'refreshDelay':
+                            defaultRefreshDelay = value;
+                            GM_setValue('refreshDelay', value);
+                            break;
+                        case 'randomDelay':
+                            defaultRandomDelay = value;
+                            GM_setValue('randomDelay', value);
+                            break;
+                        case 'useFixedHour':
+                            defaultUseFixedHour = value;
+                            GM_setValue('useFixedHour', value);
+                            break;
+                        default:
+                            break;
+                    }
+                }
+
+                function handleSettingChange(key, value) {
+                    switch (key) {
+                        case 'enableRefresh':
+                            tabEnableRefresh = value;
+                            break;
+                        case 'pageToRefresh':
+                            tabPageToRefresh = value;
+                            break;
+                        case 'refreshDelay':
+                            tabRefreshDelay = value;
+                            break;
+                        case 'randomDelay':
+                            tabRandomDelay = value;
+                            break;
+                        case 'useFixedHour':
+                            tabUseFixedHour = value;
+                            break;
+                        default:
+                            break;
+                    }
+
+                    if (!autoRefreshLimitToFirstTab || isPrimaryAutoRefreshTab) {
+                        updateDefaultSetting(key, value);
+                        clearTabSettings();
+                    } else {
+                        saveTabSettings(getCurrentTabSettingsSnapshot());
+                    }
+
+                    if (key === 'enableRefresh' && enableRefreshCheckboxElement && enableRefreshCheckboxElement.checked !== tabEnableRefresh) {
+                        enableRefreshCheckboxElement.checked = tabEnableRefresh;
+                    }
+                }
+
+                function updateAutoRefreshUIState() {
+                    if (!optionsContainerElement || !autoRefreshLimitToFirstTab || !tabBadgeElement) {
+                        return;
+                    }
+
+                    if (isSecondaryTabWithEphemeralValues) {
+                        optionsContainerElement.style.borderColor = '#b12704';
+                        tabBadgeElement.textContent = 'Onglet secondaire';
+                        tabBadgeElement.style.backgroundColor = '#b12704';
+                        tabBadgeElement.style.color = '#fff';
                         if (!autoRefreshInfoBanner) {
                             autoRefreshInfoBanner = document.createElement('div');
-                            autoRefreshInfoBanner.textContent = 'Auto-refresh désactivé dans cet onglet car déjà actif dans un autre onglet.';
+                            autoRefreshInfoBanner.textContent = 'Valeurs temporaires : elles seront perdues en fermant cet onglet.';
                             autoRefreshInfoBanner.style.color = '#b12704';
-                            autoRefreshInfoBanner.style.fontWeight = 'bold';
-                            autoRefreshInfoBanner.style.marginRight = '20px';
-                            autoRefreshInfoBanner.style.maxWidth = '220px';
+                            autoRefreshInfoBanner.style.fontSize = '12px';
                             autoRefreshInfoBanner.style.lineHeight = '1.3';
-                            optionsContainerElement.insertBefore(autoRefreshInfoBanner, optionsContainerElement.firstChild);
+                            autoRefreshInfoBanner.style.maxWidth = '260px';
+                            autoRefreshInfoBanner.style.flex = '1';
+                            autoRefreshInfoBanner.style.marginLeft = '10px';
+                            if (headerRowElement) {
+                                headerRowElement.appendChild(autoRefreshInfoBanner);
+                            }
                         }
                     } else {
-                        enableRefreshCheckboxElement.disabled = false;
+                        optionsContainerElement.style.borderColor = '#007600';
+                        tabBadgeElement.textContent = 'Onglet principal';
+                        tabBadgeElement.style.backgroundColor = '#007600';
+                        tabBadgeElement.style.color = '#fff';
                         if (autoRefreshInfoBanner) {
                             autoRefreshInfoBanner.remove();
                             autoRefreshInfoBanner = null;
@@ -12599,13 +13539,14 @@ ${addressOptions.length && isPlus && apiOk ? `
                     }
 
                     //Autorise le refresh dynamique seulement si on est dans la plage (ou si autoRefreshTimeSlot désactivé)
-                    const allowDynamic = (!autoRefreshTimeSlot || inSlot) && enableRefresh;
+                    const allowDynamic = (!autoRefreshTimeSlot || inSlot) && tabEnableRefresh;
                     //Si ni dynamique ni horaire fixé, on ne schedule rien
-                    if (!allowDynamic && !useFixedHour) return;
+                    if (!allowDynamic && !tabUseFixedHour) return;
 
                     //Calcul du délai dynamique
-                    const randomSec = getRandomInteger(0, randomDelay);
-                    const totalDelaySec = (refreshDelay * 60) + randomSec;
+                    const safeRandomDelay = Math.max(0, tabRandomDelay);
+                    const randomSec = getRandomInteger(0, safeRandomDelay);
+                    const totalDelaySec = (tabRefreshDelay * 60) + randomSec;
                     let nextRefreshTime = Date.now() + (totalDelaySec * 1000);
                     let useHoraire = false;
 
@@ -12616,7 +13557,7 @@ ${addressOptions.length && isPlus && apiOk ? `
                     nextHour.setHours(nowDate.getHours() + 1);
                     const candidateFixed = nextHour.getTime() + (randomSec * 1000);
 
-                    if (useFixedHour) {
+                    if (tabUseFixedHour) {
                         if (allowDynamic) {
                             //choix entre dynamique et horaire
                             if (candidateFixed < nextRefreshTime) {
@@ -12651,11 +13592,36 @@ ${addressOptions.length && isPlus && apiOk ? `
                     optionsContainer.style.borderRadius = '8px';
                     optionsContainer.style.padding = '10px';
                     optionsContainer.style.display = 'flex';
-                    optionsContainer.style.flexDirection = 'row';
-                    optionsContainer.style.alignItems = 'center';
+                    optionsContainer.style.flexDirection = 'column';
                     optionsContainer.style.width = 'auto';
                     optionsContainer.style.maxWidth = '800px';
+                    optionsContainer.style.gap = '6px';
                     optionsContainerElement = optionsContainer;
+
+                    if (autoRefreshLimitToFirstTab) {
+                        headerRowElement = document.createElement('div');
+                        headerRowElement.style.display = 'flex';
+                        headerRowElement.style.alignItems = 'center';
+                        headerRowElement.style.flexWrap = 'wrap';
+                        headerRowElement.style.rowGap = '4px';
+                        headerRowElement.style.columnGap = '10px';
+                        optionsContainer.appendChild(headerRowElement);
+
+                        tabBadgeElement = document.createElement('span');
+                        tabBadgeElement.style.fontWeight = 'bold';
+                        tabBadgeElement.style.fontSize = '12px';
+                        tabBadgeElement.style.padding = '2px 10px';
+                        tabBadgeElement.style.borderRadius = '999px';
+                        headerRowElement.appendChild(tabBadgeElement);
+                    }
+
+                    controlsRowElement = document.createElement('div');
+                    controlsRowElement.style.display = 'flex';
+                    controlsRowElement.style.alignItems = 'center';
+                    controlsRowElement.style.flexWrap = 'wrap';
+                    controlsRowElement.style.columnGap = '15px';
+                    controlsRowElement.style.rowGap = '6px';
+                    optionsContainer.appendChild(controlsRowElement);
 
                     //Checkbox Activer
                     const enableRefreshLabel = document.createElement('label');
@@ -12667,12 +13633,10 @@ ${addressOptions.length && isPlus && apiOk ? `
                     enableRefreshLabel.appendChild(document.createTextNode('Activer'));
                     enableRefreshLabel.style.alignItems = 'center';
                     enableRefreshLabel.style.gap = '5px';
-                    enableRefreshLabel.style.marginRight = '20px';
-                    optionsContainer.appendChild(enableRefreshLabel);
+                    controlsRowElement.appendChild(enableRefreshLabel);
 
                     enableRefreshCheckbox.addEventListener('click', function() {
-                        enableRefresh = enableRefreshCheckbox.checked;
-                        GM_setValue('enableRefresh', enableRefresh);
+                        handleSettingChange('enableRefresh', enableRefreshCheckbox.checked);
                         scheduleRefresh();
                     });
 
@@ -12705,11 +13669,10 @@ ${addressOptions.length && isPlus && apiOk ? `
                     });
                     pageSelect.style.marginBottom = '5px';
                     pageContainer.appendChild(pageSelect);
-                    optionsContainer.appendChild(pageContainer);
+                    controlsRowElement.appendChild(pageContainer);
 
                     pageSelect.addEventListener('change', function() {
-                        GM_setValue('pageToRefresh', pageSelect.value);
-                        pageToRefresh = pageSelect.value;
+                        handleSettingChange('pageToRefresh', pageSelect.value);
                     });
 
                     //Délai (min)
@@ -12729,22 +13692,25 @@ ${addressOptions.length && isPlus && apiOk ? `
                     delayInput.style.width = '60px';
                     delayInput.style.textAlign = 'center';
                     delayContainer.appendChild(delayInput);
-                    optionsContainer.appendChild(delayContainer);
+                    controlsRowElement.appendChild(delayContainer);
 
                     delayInput.addEventListener('change', function() {
-                        if (!delayInput.value || delayInput.value === "0") delayInput.value = 5;
-                        GM_setValue('refreshDelay', delayInput.value);
-                        refreshDelay = Number(delayInput.value);
+                        let value = Number(delayInput.value);
+                        if (!value || value <= 0) {
+                            value = 5;
+                        }
+                        delayInput.value = value;
+                        handleSettingChange('refreshDelay', value);
                         scheduleRefresh();
                     });
 
                     const plusText = document.createElement('span');
                     plusText.innerText = '+';
-                    plusText.style.margin = 'auto 15px';
+                    plusText.style.margin = '0 10px';
                     plusText.style.fontSize = '16px';
                     plusText.style.display = 'flex';
                     plusText.style.alignItems = 'center';
-                    optionsContainer.appendChild(plusText);
+                    controlsRowElement.appendChild(plusText);
 
                     //Aléatoire max (sec)
                     const randomDelayContainer = document.createElement('div');
@@ -12763,12 +13729,15 @@ ${addressOptions.length && isPlus && apiOk ? `
                     randomDelayInput.style.width = '60px';
                     randomDelayInput.style.textAlign = 'center';
                     randomDelayContainer.appendChild(randomDelayInput);
-                    optionsContainer.appendChild(randomDelayContainer);
+                    controlsRowElement.appendChild(randomDelayContainer);
 
                     randomDelayInput.addEventListener('change', function() {
-                        if (!randomDelayInput.value) randomDelayInput.value = 15;
-                        GM_setValue('randomDelay', randomDelayInput.value);
-                        randomDelay = Number(randomDelayInput.value);
+                        let value = Number(randomDelayInput.value);
+                        if (Number.isNaN(value) || value < 0) {
+                            value = 0;
+                        }
+                        randomDelayInput.value = value;
+                        handleSettingChange('randomDelay', value);
                         scheduleRefresh();
                     });
 
@@ -12782,13 +13751,11 @@ ${addressOptions.length && isPlus && apiOk ? `
                     fixedHourLabel.classList.add('fixed-hour-label');
                     fixedHourLabel.style.borderLeft = '1px solid #0f1111';
                     fixedHourLabel.style.paddingLeft = '10px';
-                    fixedHourLabel.style.marginLeft = '10px';
                     fixedHourLabel.style.alignItems = 'center';
-                    optionsContainer.appendChild(fixedHourLabel);
+                    controlsRowElement.appendChild(fixedHourLabel);
 
                     fixedHourCheckbox.addEventListener('click', function() {
-                        useFixedHour = fixedHourCheckbox.checked;
-                        GM_setValue('useFixedHour', useFixedHour);
+                        handleSettingChange('useFixedHour', fixedHourCheckbox.checked);
                         scheduleRefresh();
                     });
 
@@ -12797,11 +13764,11 @@ ${addressOptions.length && isPlus && apiOk ? `
                     logoLink.parentNode.insertBefore(optionsContainer, headerLinksContainer);
 
                     //Appliquer les valeurs stockées
-                    pageSelect.value = pageToRefresh;
-                    delayInput.value = refreshDelay;
-                    randomDelayInput.value = randomDelay;
-                    fixedHourCheckbox.checked = useFixedHour;
-                    enableRefreshCheckbox.checked = enableRefresh;
+                    pageSelect.value = tabPageToRefresh;
+                    delayInput.value = tabRefreshDelay;
+                    randomDelayInput.value = tabRandomDelay;
+                    fixedHourCheckbox.checked = tabUseFixedHour;
+                    enableRefreshCheckbox.checked = tabEnableRefresh;
                     updateAutoRefreshUIState();
                 }
 
@@ -12822,16 +13789,17 @@ ${addressOptions.length && isPlus && apiOk ? `
                                 isPrimaryAutoRefreshTab = false;
                                 stopAutoRefreshHeartbeat();
                                 startAutoRefreshMonitor(() => {
+                                    isSecondaryTabWithEphemeralValues = autoRefreshLimitToFirstTab && !isPrimaryAutoRefreshTab;
+                                    if (!isSecondaryTabWithEphemeralValues) {
+                                        clearTabSettings();
+                                    }
                                     updateAutoRefreshUIState();
                                     scheduleRefresh();
                                 });
+                                isSecondaryTabWithEphemeralValues = autoRefreshLimitToFirstTab && !isPrimaryAutoRefreshTab;
                                 updateAutoRefreshUIState();
                             }
-                            return;
                         }
-                    }
-                    if (autoRefreshLimitToFirstTab && !isPrimaryAutoRefreshTab) {
-                        return;
                     }
                     const next = calculateRefreshDelay();
                     if (!next) return;
@@ -12856,19 +13824,20 @@ ${addressOptions.length && isPlus && apiOk ? `
                         const timeLeft = next.nextRefreshTime - Date.now();
                         if (timeLeft <= 0) {
                             countdownDiv.textContent = 'Actualisation...';
-                            let targetUrl = 'https://www.amazon.fr/vine/vine-items?queue=';
-                            if (pageToRefresh === 'current') {
-                                targetUrl = window.location.href;
-                            } else if (pageToRefresh === 'potluck') {
-                                targetUrl += 'potluck';
-                            } else if (pageToRefresh === 'last_chance') {
-                                targetUrl += 'last-chance';
-                            } else if (pageToRefresh === 'encore') {
-                                targetUrl += 'encore';
-                            } else if (pageToRefresh === 'all_items') {
-                                targetUrl += 'all_items';
+                            if (tabPageToRefresh === 'current') {
+                                window.location.reload();
+                            } else {
+                                const queueTargets = {
+                                    potluck: 'https://www.amazon.fr/vine/vine-items?queue=potluck',
+                                    last_chance: 'https://www.amazon.fr/vine/vine-items?queue=last_chance',
+                                    encore: 'https://www.amazon.fr/vine/vine-items?queue=encore',
+                                    all_items: 'https://www.amazon.fr/vine/vine-items?queue=all_items',
+                                };
+                                const nextUrl = queueTargets[tabPageToRefresh];
+                                if (nextUrl) {
+                                    window.location.href = nextUrl;
+                                }
                             }
-                            window.location.href = targetUrl;
                         } else {
                             const minutes = Math.floor(timeLeft / 1000 / 60);
                             const seconds = Math.floor((timeLeft / 1000) % 60);
@@ -12884,12 +13853,15 @@ ${addressOptions.length && isPlus && apiOk ? `
                     updateCountdown();
                 }
 
-                const hasPrimary = attemptToRegisterPrimaryAutoRefreshTab();
-                if (!(useFixedHour && refreshHideUI) && !isMobile()) {
+                if (!(tabUseFixedHour && refreshHideUI) && !isMobile()) {
                     addAutoRefreshUI();
                 }
                 if (!hasPrimary && autoRefreshLimitToFirstTab) {
                     startAutoRefreshMonitor(() => {
+                        isSecondaryTabWithEphemeralValues = autoRefreshLimitToFirstTab && !isPrimaryAutoRefreshTab;
+                        if (!isSecondaryTabWithEphemeralValues) {
+                            clearTabSettings();
+                        }
                         updateAutoRefreshUIState();
                         scheduleRefresh();
                     });
