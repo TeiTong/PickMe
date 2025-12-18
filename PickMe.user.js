@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PickMe
 // @namespace    http://tampermonkey.net/
-// @version      3.5.0
+// @version      3.5.1
 // @description  Plugin d'aide à la navigation pour les membres du discord Amazon Vine FR : https://discord.gg/amazonvinefr
 // @author       Créateur/Codeur principal : MegaMan / Codeur secondaire : Sulff / Testeurs : Louise, JohnnyBGoody, L'avocat du Diable et Popato (+ du code de lelouch_di_britannia, FMaz008 et Thorvarium)
 // @match        https://www.amazon.fr/vine/vine-items
@@ -26,7 +26,7 @@
 // @grant        GM_listValues
 // @run-at       document-start
 // @noframes
-// @require      https://raw.githubusercontent.com/teitong/reviewremember/main/ReviewRememberPM.user.js?v=1.9.9
+// @require      https://raw.githubusercontent.com/teitong/reviewremember/main/ReviewRememberPM.user.js?v=1.9.10
 // @require      https://vinepick.me/scripts/jquery-3.7.1.min.js
 // @require      https://vinepick.me/scripts/heic2any.min.js
 //==/UserScript==
@@ -11698,19 +11698,26 @@ ${addressOptions.length && isPlus && apiOk ? `
             }
 
             function detectTier() {
-                var silverElement = document.getElementById("vvp-silver-tier-label");
-                var goldElement = document.getElementById("vvp-gold-tier-label");
-                var tier;
+                const contextScript = document.querySelector('script[type="a-state"][data-a-state*="vvp-context"]');
 
-                if (silverElement && silverElement.textContent.includes("Argent")) {
-                    tier = "silver";
-                } else if (goldElement && goldElement.textContent.includes("Or")) {
-                    tier = "gold";
-                } else {
-                    tier = null; //Pas de correspondance trouvée
+                if (contextScript?.textContent) {
+                    try {
+                        const contextData = JSON.parse(contextScript.textContent.trim());
+                        const tierStatus = contextData?.voiceDetails?.tierStatus;
+
+                        if (tierStatus === "TIER2") {
+                            return "gold";
+                        }
+
+                        if (tierStatus) {
+                            return "silver";
+                        }
+                    } catch (error) {
+                        console.warn("Impossible de parser le vvp-context pour détecter le tier", error);
+                    }
                 }
 
-                return tier;
+                return null; //Pas de correspondance trouvée
             }
 
             //Affichage des données reçu par l'API
