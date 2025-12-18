@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PickMe
 // @namespace    http://tampermonkey.net/
-// @version      3.4.0
+// @version      3.5.0
 // @description  Plugin d'aide à la navigation pour les membres du discord Amazon Vine FR : https://discord.gg/amazonvinefr
 // @author       Créateur/Codeur principal : MegaMan / Codeur secondaire : Sulff / Testeurs : Louise, JohnnyBGoody, L'avocat du Diable et Popato (+ du code de lelouch_di_britannia, FMaz008 et Thorvarium)
 // @match        https://www.amazon.fr/vine/vine-items
@@ -26,7 +26,7 @@
 // @grant        GM_listValues
 // @run-at       document-start
 // @noframes
-// @require      https://raw.githubusercontent.com/teitong/reviewremember/main/ReviewRememberPM.user.js?v=1.9.8
+// @require      https://raw.githubusercontent.com/teitong/reviewremember/main/ReviewRememberPM.user.js?v=1.9.9
 // @require      https://vinepick.me/scripts/jquery-3.7.1.min.js
 // @require      https://vinepick.me/scripts/heic2any.min.js
 //==/UserScript==
@@ -203,8 +203,8 @@ NOTES:
             ];
 
             const NORMALIZED_CUSTOMS_WARNING_PHRASES = CUSTOMS_WARNING_PHRASES
-                .map(phrase => normalizeText(phrase))
-                .filter(Boolean);
+            .map(phrase => normalizeText(phrase))
+            .filter(Boolean);
 
             function textContainsCustomsWarning(text) {
                 const normalized = normalizeText(text);
@@ -318,8 +318,8 @@ NOTES:
                         }
                     } else if (mutation.type === 'characterData') {
                         const targetText = mutation.target && typeof mutation.target.textContent === 'string'
-                            ? mutation.target.textContent
-                            : '';
+                        ? mutation.target.textContent
+                        : '';
                         if (targetText && detectCustomsWarning(targetText)) {
                             observer.disconnect();
                             return;
@@ -348,6 +348,11 @@ NOTES:
             const ALERT_ID = 'pm-balance-alert';
             const STYLE_ID = `${ALERT_ID}-style`;
             const HIGHLIGHT_CONTAINER_CLASS = 'pm-balance-warning-container';
+            const DEFAULT_BALANCE_TITLE = 'Attention : reste à payer';
+            const DEFAULT_MESSAGE_TEMPLATE = 'Cette commande Vine comporte un reste à payer de {{amount}}. Assurez-vous de vouloir continuer avant de valider.';
+            const AMOUNT_PLACEHOLDER = '{{amount}}';
+            const TOTAL_BEFORE_SPECIAL_PAYMENTS = 'TOTAL_BEFORE_SPECIAL_PAYMENTS_TAX_INCLUSIVE';
+            const GIFT_CARD_BALANCE_TYPE = 'SPECIAL_PAYMENTS_GIFT_CARD_BALANCE';
 
             function ensureStyle() {
                 if (document.getElementById(STYLE_ID)) {
@@ -376,10 +381,21 @@ NOTES:
                         font-size: 24px;
                     }
 
-                    #${ALERT_ID} .pm-balance-alert__content strong {
+                    #${ALERT_ID} .pm-balance-alert__title {
                         display: block;
                         font-size: 16px;
                         margin-bottom: 4px;
+                    }
+
+                    #${ALERT_ID} .pm-balance-alert__message {
+                        display: block;
+                    }
+
+                    #${ALERT_ID} .pm-balance-alert__note {
+                        display: block;
+                        margin-top: 4px;
+                        font-size: 13px;
+                        color: #1f1f1f;
                     }
 
                     #${ALERT_ID} .pm-balance-alert__amount {
@@ -408,10 +424,10 @@ NOTES:
                 }
 
                 let sanitized = text
-                    .replace(/\u00a0/g, '')
-                    .replace(/€/g, '')
-                    .replace(/\s/g, '')
-                    .trim();
+                .replace(/\u00a0/g, '')
+                .replace(/€/g, '')
+                .replace(/\s/g, '')
+                .trim();
 
                 if (!sanitized) {
                     return null;
@@ -471,66 +487,116 @@ NOTES:
                 return null;
             }
 
-            function injectBanner(amountText) {
+            function appendMessageWithAmount(node, template, normalizedAmount) {
+                if (!node) {
+                    return;
+                }
+
+                const sanitizedTemplate = typeof template === 'string' && template.trim()
+                    ? template
+                    : DEFAULT_MESSAGE_TEMPLATE;
+
+                if (sanitizedTemplate.includes(AMOUNT_PLACEHOLDER)) {
+                    const parts = sanitizedTemplate.split(AMOUNT_PLACEHOLDER);
+                    parts.forEach((part, index) => {
+                        if (part) {
+                            node.appendChild(document.createTextNode(part));
+                        }
+                        if (index < parts.length - 1) {
+                            const amountSpan = document.createElement('span');
+                            amountSpan.className = 'pm-balance-alert__amount';
+                            amountSpan.textContent = normalizedAmount;
+                            node.appendChild(amountSpan);
+                        }
+                    });
+                } else {
+                    node.appendChild(document.createTextNode(sanitizedTemplate));
+                    if (normalizedAmount) {
+                        node.appendChild(document.createTextNode(' '));
+                        const amountSpan = document.createElement('span');
+                        amountSpan.className = 'pm-balance-alert__amount';
+                        amountSpan.textContent = normalizedAmount;
+                        node.appendChild(amountSpan);
+                    }
+                }
+            }
+
+            function renderBannerContent(alert, normalizedAmount, options) {
+                if (!alert) {
+                    return;
+                }
+
+                let content = alert.querySelector('.pm-balance-alert__content');
+                if (!content) {
+                    content = document.createElement('div');
+                    content.className = 'pm-balance-alert__content';
+                    alert.appendChild(content);
+                }
+
+                content.textContent = '';
+
+                const title = document.createElement('strong');
+                title.className = 'pm-balance-alert__title';
+                title.textContent = options.titleText || DEFAULT_BALANCE_TITLE;
+                content.appendChild(title);
+
+                const message = document.createElement('span');
+                message.className = 'pm-balance-alert__message';
+                appendMessageWithAmount(message, options.messageTemplate, normalizedAmount);
+                content.appendChild(message);
+
+                const notes = Array.isArray(options.extraNotes) ? options.extraNotes : [];
+                for (const note of notes) {
+                    if (!note) {
+                        continue;
+                    }
+                    const noteElement = document.createElement('span');
+                    noteElement.className = 'pm-balance-alert__note';
+                    noteElement.textContent = note;
+                    content.appendChild(noteElement);
+                }
+            }
+
+            function injectBanner(amountText, options = {}) {
                 const normalizedAmount = (amountText || '').replace(/\u00a0/g, ' ').trim();
                 ensureStyle();
 
-                const existing = document.getElementById(ALERT_ID);
-                if (existing) {
-                    const amountSpan = existing.querySelector('.pm-balance-alert__amount');
-                    if (amountSpan) {
-                        amountSpan.textContent = normalizedAmount;
+                let alert = document.getElementById(ALERT_ID);
+                if (!alert) {
+                    const referenceContainer = document.querySelector('#a-page') || document.body;
+                    if (!referenceContainer) {
+                        return;
                     }
-                    return;
+
+                    alert = document.createElement('div');
+                    alert.id = ALERT_ID;
+
+                    const icon = document.createElement('span');
+                    icon.className = 'pm-balance-alert__icon';
+                    icon.textContent = '⚠️';
+                    alert.appendChild(icon);
+
+                    referenceContainer.prepend(alert);
                 }
 
-                const referenceContainer = document.querySelector('#a-page') || document.body;
-                if (!referenceContainer) {
-                    return;
-                }
-
-                const alert = document.createElement('div');
-                alert.id = ALERT_ID;
-
-                const icon = document.createElement('span');
-                icon.className = 'pm-balance-alert__icon';
-                icon.textContent = '⚠️';
-
-                const content = document.createElement('div');
-                content.className = 'pm-balance-alert__content';
-
-                const title = document.createElement('strong');
-                title.textContent = 'Attention : reste à payer';
-
-                const message = document.createElement('span');
-                message.appendChild(document.createTextNode('Cette commande Vine comporte un reste à payer de '));
-
-                const amountSpan = document.createElement('span');
-                amountSpan.className = 'pm-balance-alert__amount';
-                amountSpan.textContent = normalizedAmount;
-
-                const suffix = document.createTextNode('. Assurez-vous de vouloir continuer avant de valider.');
-
-                message.appendChild(amountSpan);
-                message.appendChild(suffix);
-
-                content.appendChild(title);
-                content.appendChild(message);
-
-                alert.appendChild(icon);
-                alert.appendChild(content);
-
-                referenceContainer.prepend(alert);
+                renderBannerContent(alert, normalizedAmount, options);
             }
 
             function highlightAmount(container, amountText) {
+                if (!container) {
+                    return;
+                }
+
                 ensureStyle();
                 container.classList.add(HIGHLIGHT_CONTAINER_CLASS);
 
-                if (container.querySelector('.pm-balance-warning-wrapper')) {
-                    const amountNode = container.querySelector('.pm-balance-warning-amount');
+                const normalized = (amountText || '').replace(/\u00a0/g, ' ').trim();
+
+                const existingWrapper = container.querySelector('.pm-balance-warning-wrapper');
+                if (existingWrapper) {
+                    const amountNode = existingWrapper.querySelector('.pm-balance-warning-amount');
                     if (amountNode) {
-                        amountNode.textContent = amountText.replace(/\u00a0/g, ' ').trim();
+                        amountNode.textContent = normalized;
                     }
                     return;
                 }
@@ -544,22 +610,107 @@ NOTES:
 
                 const amountHolder = document.createElement('span');
                 amountHolder.className = 'pm-balance-warning-amount';
-
-                while (container.firstChild) {
-                    amountHolder.appendChild(container.firstChild);
-                }
+                amountHolder.textContent = normalized;
 
                 wrapper.appendChild(icon);
                 wrapper.appendChild(amountHolder);
+
+                container.textContent = '';
                 container.appendChild(wrapper);
             }
 
-            function applyBalanceWarning(info) {
-                const normalizedAmount = (info.amountText || '').replace(/\u00a0/g, ' ').trim();
-                injectBanner(normalizedAmount);
-                highlightAmount(info.container, normalizedAmount);
-                info.container.dataset.pmBalanceWarningApplied = 'true';
-                info.container.dataset.pmBalanceAmount = normalizedAmount;
+            function getSubtotalInfoByType(type) {
+                if (!type) {
+                    return null;
+                }
+
+                const input = document.querySelector(`input[name="subtotalLineType"][value="${type}"]`);
+                if (!input) {
+                    return null;
+                }
+
+                const grid = input.closest('.order-summary-grid');
+                if (!grid) {
+                    return null;
+                }
+
+                const container = grid.querySelector('.order-summary-line-definition');
+                if (!container) {
+                    return null;
+                }
+
+                const text = container.textContent || '';
+                return {
+                    container,
+                    amountText: text,
+                    amountValue: parseEuroAmount(text)
+                };
+            }
+
+            function detectGiftCardDetails() {
+                const totalBefore = getSubtotalInfoByType(TOTAL_BEFORE_SPECIAL_PAYMENTS);
+                if (!totalBefore || totalBefore.amountValue === null || totalBefore.amountValue <= 0) {
+                    return null;
+                }
+
+                const giftCard = getSubtotalInfoByType(GIFT_CARD_BALANCE_TYPE);
+                if (!giftCard || giftCard.amountValue === null || giftCard.amountValue >= 0) {
+                    return null;
+                }
+
+                return { totalBefore, giftCard };
+            }
+
+            function removeBalanceWarning(info) {
+                const alert = document.getElementById(ALERT_ID);
+                if (alert && alert.parentElement) {
+                    alert.remove();
+                }
+
+                if (!info || !info.container) {
+                    return;
+                }
+
+                const target = info.container;
+                target.classList.remove(HIGHLIGHT_CONTAINER_CLASS);
+
+                const wrapper = target.querySelector('.pm-balance-warning-wrapper');
+                if (wrapper) {
+                    wrapper.remove();
+                }
+
+                const normalized = (info.amountText || '').replace(/\u00a0/g, ' ').trim();
+                target.textContent = normalized;
+
+                delete target.dataset.pmBalanceWarningApplied;
+                delete target.dataset.pmBalanceAmount;
+                delete target.dataset.pmBalanceMessageType;
+            }
+
+            function applyBalanceWarning(info, options = {}) {
+                if (!info || !info.container) {
+                    return;
+                }
+
+                const displaySource = options.displayAmountText || info.amountText || '';
+                const normalizedDisplayAmount = (displaySource || '').replace(/\u00a0/g, ' ').trim();
+
+                injectBanner(normalizedDisplayAmount, options);
+
+                const highlightTarget = options.highlightContainer || info.container;
+                if (highlightTarget) {
+                    const highlightText = Object.prototype.hasOwnProperty.call(options, 'highlightAmountText')
+                        ? options.highlightAmountText
+                        : normalizedDisplayAmount;
+                    highlightAmount(highlightTarget, highlightText);
+                }
+
+                const datasetTarget = options.datasetTarget || info.container;
+                if (datasetTarget) {
+                    datasetTarget.dataset.pmBalanceWarningApplied = 'true';
+                    datasetTarget.dataset.pmBalanceAmount = normalizedDisplayAmount;
+                    datasetTarget.dataset.pmBalanceMessageType = options.messageType || 'default';
+                }
             }
 
             function processBalance() {
@@ -568,20 +719,70 @@ NOTES:
                     return false;
                 }
 
-                if (info.container.dataset.pmBalanceWarningApplied === 'true') {
+                if (info.amountValue === null) {
+                    removeBalanceWarning(info);
+                    return false;
+                }
+
+                const normalizedFinalAmount = (info.amountText || '').replace(/\u00a0/g, ' ').trim();
+                let giftCardDetails = null;
+                let currentType = 'default';
+                let comparisonAmount = normalizedFinalAmount;
+
+                if (info.amountValue <= 0) {
+                    giftCardDetails = detectGiftCardDetails();
+                    if (giftCardDetails) {
+                        currentType = 'gift-card';
+                        comparisonAmount = (giftCardDetails.totalBefore.amountText || '').replace(/\u00a0/g, ' ').trim();
+                    } else {
+                        currentType = 'none';
+                    }
+                }
+
+                const wasApplied = info.container.dataset.pmBalanceWarningApplied === 'true';
+                const previousAmount = info.container.dataset.pmBalanceAmount || '';
+                const previousType = info.container.dataset.pmBalanceMessageType || 'default';
+
+                if (currentType === 'none') {
+                    if (wasApplied) {
+                        removeBalanceWarning(info);
+                    }
+                    return false;
+                }
+
+                if (wasApplied && previousAmount === comparisonAmount && previousType === currentType) {
                     return true;
                 }
 
-                if (info.amountValue === null) {
-                    return false;
+                if (wasApplied) {
+                    delete info.container.dataset.pmBalanceWarningApplied;
                 }
 
                 if (info.amountValue <= 0) {
-                    info.container.dataset.pmBalanceAmount = (info.amountText || '').replace(/\u00a0/g, ' ').trim();
-                    return false;
+                    if (!giftCardDetails) {
+                        return false;
+                    }
+
+                    const extraNotes = [];
+                    const giftCardText = giftCardDetails.giftCard && giftCardDetails.giftCard.amountText
+                        ? giftCardDetails.giftCard.amountText.replace(/\u00a0/g, ' ').trim()
+                        : '';
+                    if (giftCardText) {
+                        extraNotes.push(`Carte cadeau appliquée : ${giftCardText}.`);
+                    }
+
+                    applyBalanceWarning(info, {
+                        displayAmountText: giftCardDetails.totalBefore.amountText,
+                        highlightAmountText: info.amountText,
+                        messageTemplate: 'Cette commande Vine est payante ({{amount}}) mais le montant est couvert par une carte cadeau. Vérifiez que vous souhaitez l’utiliser avant de valider.',
+                        titleText: 'Attention : carte cadeau utilisée',
+                        extraNotes,
+                        messageType: 'gift-card'
+                    });
+                    return true;
                 }
 
-                applyBalanceWarning(info);
+                applyBalanceWarning(info, { messageType: 'default' });
                 return true;
             }
 
@@ -748,6 +949,17 @@ NOTES:
 
         function findButtonPlacement() {
             const candidates = [
+                {
+                    selector: '#corePriceDisplay_desktop_feature_div',
+                    getPlacement: element => {
+                        const targetSection = element.querySelector('.a-section.a-spacing-none') || element;
+                        return { type: 'append', node: targetSection };
+                    }
+                },
+                {
+                    selector: '#corePriceDisplay_mobile_feature_div',
+                    getPlacement: element => ({ type: 'append', node: element })
+                },
                 {
                     selector: '#buyboxAccordion .a-accordion-active .basisPriceLegalMessage',
                     getPlacement: element => ({ type: 'after', node: element })
@@ -1191,6 +1403,140 @@ NOTES:
         //Ecoute des messages entrants
         if (notifEnabled && apiKey) {
             var lastNotifId = null;
+            const NOTIF_LEADER_KEY = 'pmNotifLeader';
+            const NOTIF_LEADER_TTL = 15000; //15 secondes
+            const currentNotifTabId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+            let isNotifLeader = false;
+            let notifIframeInitialized = false;
+            let notifLeaderHeartbeat = null;
+            let notifLeaderCheckInterval = null;
+
+            function parseNotifLeader(rawValue) {
+                try {
+                    return rawValue ? JSON.parse(rawValue) : null;
+                } catch (e) {
+                    return null;
+                }
+            }
+
+            function getNotifLeader() {
+                return parseNotifLeader(localStorage.getItem(NOTIF_LEADER_KEY));
+            }
+
+            function setNotifLeader(id) {
+                localStorage.setItem(NOTIF_LEADER_KEY, JSON.stringify({
+                    id: id,
+                    timestamp: Date.now()
+                }));
+            }
+
+            function isLeaderEntryStale(entry) {
+                return !entry || (Date.now() - entry.timestamp > NOTIF_LEADER_TTL);
+            }
+
+            function stopNotifLeadership() {
+                isNotifLeader = false;
+                if (notifLeaderHeartbeat) {
+                    clearInterval(notifLeaderHeartbeat);
+                    notifLeaderHeartbeat = null;
+                }
+            }
+
+            function ensureNotifIframe() {
+                if (notifIframeInitialized) {
+                    return;
+                }
+                notifIframeInitialized = true;
+
+                function addNotifIframeAndTab() {
+                    if (window.location.hostname !== "pickme.alwaysdata.net" || window.location.hostname !== hostnamePickMe) {
+                        //Initialisation de l'iframe seulement si on est sur le bon domaine
+                        var iframe = document.createElement('iframe');
+                        iframe.style.display = 'none'; //Rendre l'iframe invisible
+                        iframe.src = baseUrlPickme + "/sw/websocket.php?key=" + encodeURIComponent(apiKey);
+                        document.body.appendChild(iframe);
+                    } else {
+                        document.cookie = "pm_apiKey=" + encodeURIComponent(apiKey) + "; path=/; secure";
+                    }
+                }
+
+                if (document.readyState !== 'loading') {
+                    addNotifIframeAndTab();
+                }
+                else {
+                    document.addEventListener('DOMContentLoaded', function () {
+                        addNotifIframeAndTab()
+                    });
+                }
+            }
+
+            function startNotifLeadership() {
+                if (isNotifLeader) {
+                    return;
+                }
+                isNotifLeader = true;
+                ensureNotifIframe();
+                notifLeaderHeartbeat = setInterval(function () {
+                    var leader = getNotifLeader();
+                    if (leader && leader.id !== currentNotifTabId) {
+                        stopNotifLeadership();
+                        return;
+                    }
+                    setNotifLeader(currentNotifTabId);
+                }, 5000);
+            }
+
+            function tryBecomeNotifLeader() {
+                var leader = getNotifLeader();
+                if (!leader || leader.id === currentNotifTabId || isLeaderEntryStale(leader)) {
+                    setNotifLeader(currentNotifTabId);
+                    startNotifLeadership();
+                }
+            }
+
+            function startNotifLeaderWatchdog() {
+                if (notifLeaderCheckInterval) {
+                    return;
+                }
+                notifLeaderCheckInterval = setInterval(function () {
+                    var leader = getNotifLeader();
+                    if (!leader || isLeaderEntryStale(leader)) {
+                        tryBecomeNotifLeader();
+                    }
+                }, 4000);
+            }
+
+            window.addEventListener('storage', function(event) {
+                if (event.key === NOTIF_LEADER_KEY) {
+                    var leader = parseNotifLeader(event.newValue);
+                    if (!leader || isLeaderEntryStale(leader)) {
+                        tryBecomeNotifLeader();
+                    } else if (leader.id !== currentNotifTabId) {
+                        stopNotifLeadership();
+                    }
+                }
+            });
+
+            window.addEventListener('visibilitychange', function() {
+                if (!document.hidden && !isNotifLeader) {
+                    tryBecomeNotifLeader();
+                }
+            });
+
+            window.addEventListener('beforeunload', function() {
+                var leader = getNotifLeader();
+                if (leader && leader.id === currentNotifTabId) {
+                    localStorage.removeItem(NOTIF_LEADER_KEY);
+                }
+                if (notifLeaderCheckInterval) {
+                    clearInterval(notifLeaderCheckInterval);
+                    notifLeaderCheckInterval = null;
+                }
+                stopNotifLeadership();
+            });
+
+            tryBecomeNotifLeader();
+            startNotifLeaderWatchdog();
             if (notifFav) {
                 var titleContentLower;
                 if (filterOption == "notifFavOnly") {
@@ -1233,6 +1579,9 @@ NOTES:
             //Écouter les messages immédiatement
             window.addEventListener('message', function(event) {
                 //console.log("PickMe :", event);
+                if (!isNotifLeader) {
+                    return;
+                }
                 lastNotifId = GM_getValue('lastNotifId', null);
                 if (event.data.type === 'NEW_MESSAGE' && (event.origin == "https://pickme.alwaysdata.net" || event.origin == baseUrlPickme) && event.data.id != lastNotifId) {
                     lastNotifId = event.data.id;
@@ -1262,16 +1611,7 @@ NOTES:
                 }
             });
 
-            function addNotifTab() {
-                if (window.location.hostname !== "pickme.alwaysdata.net" || window.location.hostname !== hostnamePickMe) {
-                    //Initialisation de l'iframe seulement si on est sur le bon domaine
-                    var iframe = document.createElement('iframe');
-                    iframe.style.display = 'none'; //Rendre l'iframe invisible
-                    iframe.src = baseUrlPickme + "/sw/websocket.php?key=" + encodeURIComponent(apiKey);
-                    document.body.appendChild(iframe);
-                } else {
-                    document.cookie = "pm_apiKey=" + encodeURIComponent(apiKey) + "; path=/; secure";
-                }
+            function addNotifShortcutTab() {
                 if (shortcutNotif && !pageProduit && window.location.href.indexOf("vine") !== -1) {
                     //Sélectionner le conteneur des onglets
                     var tabsContainer = document.querySelector('.a-tabs');
@@ -1305,11 +1645,11 @@ NOTES:
 
             //Fix iPhone
             if (document.readyState !== 'loading') {
-                addNotifTab();
+                addNotifShortcutTab();
             }
             else {
                 document.addEventListener('DOMContentLoaded', function () {
-                    addNotifTab()
+                    addNotifShortcutTab()
                 });
             }
         }
@@ -1949,6 +2289,33 @@ NOTES:
             let timeSlotStart = GM_getValue("timeSlotStart", "02:00");
             let timeSlotEnd = GM_getValue("timeSlotEnd", "14:00");
 
+            let pluginMenuOpenCount = 0;
+            let autoRefreshPauseHandler = null;
+            let autoRefreshResumeHandler = null;
+
+            function registerAutoRefreshPauseHandlers(pauseHandler, resumeHandler) {
+                autoRefreshPauseHandler = typeof pauseHandler === 'function' ? pauseHandler : null;
+                autoRefreshResumeHandler = typeof resumeHandler === 'function' ? resumeHandler : null;
+
+                if (pluginMenuOpenCount > 0 && autoRefreshPauseHandler) {
+                    autoRefreshPauseHandler();
+                }
+            }
+
+            function notifyPluginMenuOpen() {
+                pluginMenuOpenCount += 1;
+                if (pluginMenuOpenCount === 1 && autoRefreshPauseHandler) {
+                    autoRefreshPauseHandler();
+                }
+            }
+
+            function notifyPluginMenuClose() {
+                pluginMenuOpenCount = Math.max(0, pluginMenuOpenCount - 1);
+                if (pluginMenuOpenCount === 0 && autoRefreshResumeHandler) {
+                    autoRefreshResumeHandler();
+                }
+            }
+
             let statsEnabled = GM_getValue("statsEnabled", false);
             let extendedEnabled = GM_getValue("extendedEnabled", false);
             let extendedDelay = GM_getValue("extendedDelay", '600');
@@ -1964,6 +2331,8 @@ NOTES:
             let ordersPercent = GM_getValue('ordersPercent', false);
             let fastCmd = GM_getValue('fastCmd', false);
             let hideBas = GM_getValue('hideBas', true);
+            let lockProductTab = GM_getValue('lockProductTab', false);
+            let productTabSelection = GM_getValue('productTabSelection', 'visibles');
             let statsInReviews = GM_getValue('statsInReviews', false);
 
             let defaultEnableRefresh = GM_getValue('enableRefresh', true);
@@ -1971,6 +2340,18 @@ NOTES:
             let defaultRefreshDelay = GM_getValue('refreshDelay', 5);
             let defaultRandomDelay = GM_getValue('randomDelay', 15);
             let defaultUseFixedHour = GM_getValue('useFixedHour', true);
+            let defaultBoostEnabled = GM_getValue('refreshBoostEnabled', false);
+            let defaultBoostDelay = Number(GM_getValue('refreshBoostDelay', 1));
+            if (!Number.isFinite(defaultBoostDelay) || defaultBoostDelay < 0) {
+                defaultBoostDelay = 1;
+            }
+            let defaultBoostDuration = Number(GM_getValue('refreshBoostDuration', 5));
+            if (!Number.isFinite(defaultBoostDuration) || defaultBoostDuration < 0) {
+                defaultBoostDuration = 5;
+            }
+            let defaultBoostBypassSlot = GM_getValue('refreshBoostBypassSlot', true);
+            let autoRefreshHideUI = GM_getValue('autoRefreshHideUI', false);
+            let refreshBoostCollapsed = GM_getValue('refreshBoostCollapsed', false);
 
             //Options avancées
             let onlyETV = GM_getValue('onlyETV', false);
@@ -2147,6 +2528,12 @@ NOTES:
             GM_setValue("refreshDelay", defaultRefreshDelay);
             GM_setValue("randomDelay", defaultRandomDelay);
             GM_setValue("useFixedHour", defaultUseFixedHour);
+            GM_setValue("refreshBoostEnabled", defaultBoostEnabled);
+            GM_setValue("refreshBoostDelay", defaultBoostDelay);
+            GM_setValue("refreshBoostDuration", defaultBoostDuration);
+            GM_setValue("refreshBoostBypassSlot", defaultBoostBypassSlot);
+            GM_setValue("autoRefreshHideUI", autoRefreshHideUI);
+            GM_setValue("refreshBoostCollapsed", refreshBoostCollapsed);
 
             //Options avancées
             GM_setValue("onlyETV", onlyETV);
@@ -3113,6 +3500,7 @@ NOTES:
 
             //Variable pour savoir s'il y a eu un nouvel objet
             var imgNew = false;
+            let shouldActivateRefreshBoost = false;
 
             if ((autohideEnabled || extendedEnabled) && apiOk) {
                 function tryAutoHideAndExtend() {
@@ -3657,11 +4045,15 @@ NOTES:
                         return urlActuelle.toString();
                     })();
                     const appliquerEtatApresCacher = () => {
-                        boutonsHaut.boutonCacherTout.style.display = '';
-                        boutonsHaut.boutonToutAfficher.style.display = 'none';
+                        const afficherVisiblesActuels = !boutonsHaut.boutonCaches.classList.contains('active');
+                        const afficherBoutonCacher = lockProductTab ? afficherVisiblesActuels : true;
+                        const afficherBoutonToutAfficher = lockProductTab ? !afficherVisiblesActuels : false;
+
+                        boutonsHaut.boutonCacherTout.style.display = afficherBoutonCacher ? '' : 'none';
+                        boutonsHaut.boutonToutAfficher.style.display = afficherBoutonToutAfficher ? '' : 'none';
                         if (hideBas) {
-                            boutonsBas.boutonCacherTout.style.display = '';
-                            boutonsBas.boutonToutAfficher.style.display = 'none';
+                            boutonsBas.boutonCacherTout.style.display = afficherBoutonCacher ? '' : 'none';
+                            boutonsBas.boutonToutAfficher.style.display = afficherBoutonToutAfficher ? '' : 'none';
                         }
                     };
 
@@ -3737,7 +4129,9 @@ NOTES:
                     });
 
                     //Force la mise à jour de l'affichage selon le nouveau statut de visibilité
-                    afficherProduits(cacher);
+                    const afficherVisiblesActuels = !boutonsHaut.boutonCaches.classList.contains('active');
+                    const afficherVisibles = lockProductTab ? afficherVisiblesActuels : cacher;
+                    afficherProduits(afficherVisibles);
                 }
 
                 //Affiche les produits en fonction du filtre : visible ou caché
@@ -3795,6 +4189,10 @@ NOTES:
                     boutonsBas.boutonVisibles.classList.toggle('active', afficherVisibles);
                     boutonsHaut.boutonCaches.classList.toggle('active', !afficherVisibles); //Active ou désactive le bouton des produits cachés
                     boutonsBas.boutonCaches.classList.toggle('active', !afficherVisibles);
+                    if (lockProductTab) {
+                        productTabSelection = afficherVisibles ? 'visibles' : 'caches';
+                        GM_setValue('productTabSelection', productTabSelection);
+                    }
                     //Gestion de l'affichage des boutons "Cacher tout" et "Tout afficher"
                     boutonsHaut.boutonCacherTout.style.display = afficherVisibles ? '' : 'none';
                     boutonsBas.boutonCacherTout.style.display = afficherVisibles ? '' : 'none';
@@ -3921,8 +4319,9 @@ NOTES:
                     wrapper.appendChild(iconeFavori);
                 });
 
-                //Initialisation de l'affichage par défaut à 'Produits Visibles'
-                afficherProduits(true);
+                //Initialisation de l'affichage par défaut à l'onglet choisi précédemment si l'option est activée
+                const afficherVisiblesParDefaut = lockProductTab ? productTabSelection !== 'caches' : true;
+                afficherProduits(afficherVisiblesParDefaut);
             }
 
             if (hideEnabled && apiOk && !autohideEnabled) {
@@ -6023,6 +6422,7 @@ li.a-last a span.larr {      /* Cible le span larr dans les li a-last */
                     //Insérer l'image après le paragraphe des résultats
                     paragraphResults.appendChild(imageElement);
                 }
+                shouldActivateRefreshBoost = true;
             }
 
             const urlData = window.location.href.match(/(amazon\..+)\/vine\/vine-items(?:\?queue=)?(encore|last_chance|potluck|all_items)?.*?(?:&page=(\d+))?$/); //Country and queue type are extrapolated from this
@@ -6712,11 +7112,28 @@ select.btn-like {
                 alert(messageLignes.join('\n'));
             }
 
+            let currentConfigPopup = null;
+            let hasClosedConfigPopup = false;
+
+            function closeConfigPopup() {
+                if (hasClosedConfigPopup) {
+                    return;
+                }
+                hasClosedConfigPopup = true;
+                document.body.classList.remove('modal-open');
+                notifyPluginMenuClose();
+                if (currentConfigPopup) {
+                    currentConfigPopup.remove();
+                    currentConfigPopup = null;
+                }
+            }
+
             //Crée la fenêtre popup de configuration avec la fonction de déplacement
             async function createConfigPopup() {
                 if (document.getElementById('configPopup')) {
                     return; //Termine la fonction pour éviter de créer une nouvelle popup
                 }
+                hasClosedConfigPopup = false;
                 let isPremiumPlus = false;
                 let isPremium = false;
                 let isPlus = false;
@@ -6760,9 +7177,12 @@ select.btn-like {
 `;
                 document.head.appendChild(style);
                 document.body.classList.add('modal-open');
+                notifyPluginMenuOpen();
 
                 const popup = document.createElement('div');
                 popup.id = "configPopup";
+                currentConfigPopup = popup;
+
                 popup.innerHTML = `
     <h2 id="configPopupHeader">
   <span style="color: #0463d5;">Paramètres</span>
@@ -6991,10 +7411,7 @@ ${addressOptions.length && isPlus && apiOk ? `
                 //Initialiser l'état des cases à cocher au chargement de la page
                 handleOrdersCheckboxes();
 
-                document.getElementById('closePopup').addEventListener('click', () => {
-                    document.body.classList.remove('modal-open');
-                    document.getElementById('configPopup').remove();
-                });
+                document.getElementById('closePopup').addEventListener('click', closeConfigPopup);
 
                 //Ajoute des écouteurs pour les nouveaux boutons
                 document.getElementById('configurerNotif').addEventListener('click', configurerNotif);
@@ -7028,7 +7445,7 @@ ${addressOptions.length && isPlus && apiOk ? `
 
                     if (confirm(`Êtes-vous sûr de vouloir restaurer ${labels[type]} ?`)) {
                         await restoreData(type);
-                        popup.remove();
+                        closeConfigPopup();
                         const cleanedLabel = labels[type].replace(/^\s*les\s+/i, '');
                         console.log(`[PïckMe] Restauration réussie (${cleanedLabel})`);
                         alert(`Restauration réussie (${cleanedLabel})`);
@@ -7058,11 +7475,7 @@ ${addressOptions.length && isPlus && apiOk ? `
                 dragElement(popup);
 
                 document.getElementById('saveConfig').addEventListener('click', saveConfig);
-                document.getElementById('closeConfig').addEventListener('click', () => {
-                    //Retire la classe "modal-open" du body
-                    document.body.classList.remove('modal-open');
-                    popup.remove();
-                });
+                document.getElementById('closeConfig').addEventListener('click', closeConfigPopup);
 
             }
 
@@ -7200,8 +7613,8 @@ ${addressOptions.length && isPlus && apiOk ? `
                 saveAddress();
 
                 //On recharge la page et on ferme le menu
+                closeConfigPopup();
                 window.location.reload();
-                document.getElementById('configPopup').remove();
             }
 
             //Ajoute les boutons pour les actions spécifiques qui ne sont pas juste des toggles on/off
@@ -7809,7 +8222,12 @@ ${addressOptions.length && isPlus && apiOk ? `
                 }
 
                 function ajouterOptionTexte(key, label, defaultValue = '', linkURL = null, linkText = null) {
-                    const storedValue = GM_getValue(key, defaultValue);
+                    const storedRawValue = GM_getValue(key, defaultValue);
+                    const storedValue = typeof storedRawValue === 'string'
+                    ? storedRawValue
+                    : (storedRawValue === null || typeof storedRawValue === 'undefined'
+                       ? ''
+                       : String(storedRawValue));
                     const optionDiv = document.createElement('div');
                     optionDiv.className = 'advancedOption';
                     optionDiv.style.margin = '10px 0';
@@ -8299,6 +8717,7 @@ ${addressOptions.length && isPlus && apiOk ? `
                 ajouterOptionCheckbox('hideBas', 'Ajouter des boutons en bas de page pour rendre visibles ou cacher les produits (en plus de ceux en haut de page)');
                 ajouterOptionCheckbox('hidePageNavigateEnabled', 'Ajouter le bouton ⏭ pour tout cacher puis passer à la page suivante (onglets "Autres articles" et "Tous les articles")');
                 ajouterOptionCheckbox('hidePagePreviousEnabled', 'Ajouter aussi le bouton ⏮ pour tout cacher puis revenir à la page précédente');
+                ajouterOptionCheckbox('lockProductTab', 'Mémoriser l\'onglet "Produits visibles"/"Produits cachés" entre les pages');
                 ajouterSeparateur();
                 ajouterOptionTexte('favUrlOn', 'URL de l\'image du favori', baseUrlPickme + "/img/coeurrouge2.png");
                 ajouterOptionTexte('favUrlOff', 'URL de l\'image du non favori', baseUrlPickme + "/img/coeurgris2.png");
@@ -8360,6 +8779,11 @@ ${addressOptions.length && isPlus && apiOk ? `
                 ajouterOptionTexte('timeSlotEnd', 'Heure fin (format HH:mm)', '14:00');
                 ajouterOptionCheckbox('refreshOnlyReco', 'Quand le prochain refresh est horaire, il ne fonctionne que si on est sur la page des recommandations');
                 ajouterOptionCheckbox('refreshHideUI', 'Cacher l\'interface si on utilise uniquement le refresh horaire');
+                ajouterOptionCheckbox('autoRefreshHideUI', "Masquer par défaut le menu de configuration de l'auto-refresh");
+                ajouterOptionCheckbox('refreshBoostEnabled', "Activer par défaut le boost d'auto-refresh");
+                ajouterOptionTexte('refreshBoostDelay', 'Délai du boost (minutes)', '1');
+                ajouterOptionTexte('refreshBoostDuration', 'Durée du boost après un nouveau produit (minutes)', '5');
+                ajouterOptionCheckbox('refreshBoostBypassSlot', "Ignorer la plage horaire pendant un boost");
                 ajouterOptionCheckbox('refreshFixed', 'Le timer ne défile pas avec la page, il est dans une position fixe');
                 ajouterSeparateur();
                 ajouterOptionTexte('refreshHorizontal', 'Position horizontale', '50%');
@@ -13305,6 +13729,56 @@ ${addressOptions.length && isPlus && apiOk ? `
                 let headerRowElement = null;
                 let tabBadgeElement = null;
                 let controlsRowElement = null;
+                let boostStatusBadgeElement = null;
+                let boostStatusTextElement = null;
+                let boostManualButtonElement = null;
+                let boostStatusIntervalId = null;
+
+                let autoRefreshPaused = false;
+
+                function buildCountdownDiv() {
+                    const div = document.createElement('div');
+                    div.style.position = refreshFixed ? 'absolute' : 'fixed';
+                    div.style.top = headerEnabled ? refreshVerticalNoHeader : refreshVertical;
+                    div.style.left = refreshHorizontal;
+                    div.style.transform = 'translateX(-50%)';
+                    div.style.backgroundColor = '#191919';
+                    div.style.color = '#fff';
+                    div.style.padding = '5px';
+                    div.style.borderRadius = '5px';
+                    div.style.zIndex = '9999';
+                    div.style.border = '1px solid rgba(255, 255, 255, 0.3)';
+                    return div;
+                }
+
+                function pauseAutoRefreshFromMenu() {
+                    if (autoRefreshPaused) {
+                        return;
+                    }
+
+                    autoRefreshPaused = true;
+
+                    if (refreshInterval) {
+                        clearInterval(refreshInterval);
+                        refreshInterval = null;
+                    }
+
+                    if (!countdownDiv) {
+                        countdownDiv = buildCountdownDiv();
+                        document.body.appendChild(countdownDiv);
+                    }
+
+                    countdownDiv.textContent = 'Auto-refresh en pause (menu ouvert)';
+                }
+
+                function resumeAutoRefreshFromMenu() {
+                    if (!autoRefreshPaused) {
+                        return;
+                    }
+
+                    autoRefreshPaused = false;
+                    scheduleRefresh();
+                }
 
                 function loadTabSettings() {
                     if (!autoRefreshLimitToFirstTab) {
@@ -13364,11 +13838,65 @@ ${addressOptions.length && isPlus && apiOk ? `
                     if (typeof stored.useFixedHour === 'boolean') {
                         result.useFixedHour = stored.useFixedHour;
                     }
+                    if (typeof stored.boostEnabled === 'boolean') {
+                        result.boostEnabled = stored.boostEnabled;
+                    }
+                    if (typeof stored.boostDelay === 'number' && !Number.isNaN(stored.boostDelay)) {
+                        result.boostDelay = stored.boostDelay;
+                    }
+                    if (typeof stored.boostDuration === 'number' && !Number.isNaN(stored.boostDuration)) {
+                        result.boostDuration = stored.boostDuration;
+                    }
+                    if (typeof stored.boostBypassSlot === 'boolean') {
+                        result.boostBypassSlot = stored.boostBypassSlot;
+                    }
                     return result;
                 }
 
                 const hasPrimary = attemptToRegisterPrimaryAutoRefreshTab();
                 let isSecondaryTabWithEphemeralValues = autoRefreshLimitToFirstTab && !hasPrimary;
+
+                registerAutoRefreshPauseHandlers(pauseAutoRefreshFromMenu, resumeAutoRefreshFromMenu);
+
+                const BOOST_STATE_STORAGE_KEY = `pmAutoRefreshBoostState-${autoRefreshTabId}`;
+
+                function loadBoostState() {
+                    try {
+                        const raw = sessionStorage.getItem(BOOST_STATE_STORAGE_KEY);
+                        if (!raw) {
+                            return null;
+                        }
+                        const parsed = JSON.parse(raw);
+                        if (parsed && typeof parsed === 'object' && typeof parsed.until === 'number') {
+                            return parsed.until;
+                        }
+                    } catch (error) {
+                        // Ignore storage errors
+                    }
+                    return null;
+                }
+
+                function saveBoostState(until) {
+                    try {
+                        if (typeof until === 'number') {
+                            sessionStorage.setItem(BOOST_STATE_STORAGE_KEY, JSON.stringify({ until }));
+                        } else {
+                            sessionStorage.removeItem(BOOST_STATE_STORAGE_KEY);
+                        }
+                    } catch (error) {
+                        // Ignore storage errors
+                    }
+                }
+
+                function clearBoostState() {
+                    saveBoostState(null);
+                }
+
+                let boostActiveUntil = loadBoostState();
+                if (typeof boostActiveUntil === 'number' && boostActiveUntil <= Date.now()) {
+                    boostActiveUntil = null;
+                    clearBoostState();
+                }
 
                 const defaultTabSettings = {
                     enableRefresh: defaultEnableRefresh,
@@ -13376,6 +13904,10 @@ ${addressOptions.length && isPlus && apiOk ? `
                     refreshDelay: defaultRefreshDelay,
                     randomDelay: defaultRandomDelay,
                     useFixedHour: defaultUseFixedHour,
+                    boostEnabled: defaultBoostEnabled,
+                    boostDelay: defaultBoostDelay,
+                    boostDuration: defaultBoostDuration,
+                    boostBypassSlot: defaultBoostBypassSlot,
                 };
 
                 const storedTabSettings = autoRefreshLimitToFirstTab ? loadTabSettings() : null;
@@ -13385,6 +13917,10 @@ ${addressOptions.length && isPlus && apiOk ? `
                 let tabRefreshDelay = defaultTabSettings.refreshDelay;
                 let tabRandomDelay = defaultTabSettings.randomDelay;
                 let tabUseFixedHour = defaultTabSettings.useFixedHour;
+                let tabBoostEnabled = defaultTabSettings.boostEnabled;
+                let tabBoostDelay = defaultTabSettings.boostDelay;
+                let tabBoostDuration = defaultTabSettings.boostDuration;
+                let tabBoostBypassSlot = defaultTabSettings.boostBypassSlot;
 
                 if (isSecondaryTabWithEphemeralValues) {
                     if (storedTabSettings) {
@@ -13394,12 +13930,22 @@ ${addressOptions.length && isPlus && apiOk ? `
                         tabRefreshDelay = merged.refreshDelay;
                         tabRandomDelay = merged.randomDelay;
                         tabUseFixedHour = merged.useFixedHour;
+                        tabBoostEnabled = merged.boostEnabled;
+                        tabBoostDelay = merged.boostDelay;
+                        tabBoostDuration = merged.boostDuration;
+                        tabBoostBypassSlot = merged.boostBypassSlot;
                     } else {
                         tabEnableRefresh = false;
                         tabUseFixedHour = false;
+                        tabBoostEnabled = false;
                     }
                 } else {
                     clearTabSettings();
+                }
+
+                if (!tabBoostEnabled) {
+                    boostActiveUntil = null;
+                    clearBoostState();
                 }
 
                 function getCurrentTabSettingsSnapshot() {
@@ -13409,7 +13955,104 @@ ${addressOptions.length && isPlus && apiOk ? `
                         refreshDelay: tabRefreshDelay,
                         randomDelay: tabRandomDelay,
                         useFixedHour: tabUseFixedHour,
+                        boostEnabled: tabBoostEnabled,
+                        boostDelay: tabBoostDelay,
+                        boostDuration: tabBoostDuration,
+                        boostBypassSlot: tabBoostBypassSlot,
                     };
+                }
+
+                function isBoostActive() {
+                    if (!tabBoostEnabled || typeof boostActiveUntil !== 'number') {
+                        return false;
+                    }
+                    if (boostActiveUntil <= Date.now()) {
+                        boostActiveUntil = null;
+                        clearBoostState();
+                        return false;
+                    }
+                    return true;
+                }
+
+                function activateBoost(reschedule = true) {
+                    if (!tabBoostEnabled) {
+                        return;
+                    }
+                    const durationMinutes = Math.max(0, tabBoostDuration);
+                    const until = Date.now() + (durationMinutes * 60000);
+                    boostActiveUntil = until;
+                    saveBoostState(until);
+                    updateBoostStatusDisplay();
+                    startBoostStatusUpdates();
+                    if (reschedule) {
+                        scheduleRefresh();
+                    }
+                }
+
+                function stopBoostStatusUpdates() {
+                    if (boostStatusIntervalId) {
+                        clearInterval(boostStatusIntervalId);
+                        boostStatusIntervalId = null;
+                    }
+                }
+
+                function startBoostStatusUpdates() {
+                    if (!boostStatusBadgeElement && !boostStatusTextElement) {
+                        return;
+                    }
+                    stopBoostStatusUpdates();
+                    updateBoostStatusDisplay();
+                    boostStatusIntervalId = setInterval(updateBoostStatusDisplay, 1000);
+                }
+
+                function updateBoostStatusDisplay() {
+                    if (!boostStatusBadgeElement && !boostStatusTextElement) {
+                        return;
+                    }
+
+                    let badgeText = '';
+                    let detailText = '';
+                    let badgeBg = '#d5d9d9';
+                    let badgeColor = '#111';
+                    let detailColor = '#555';
+                    const boostActive = isBoostActive();
+
+                    if (!tabBoostEnabled) {
+                        badgeText = 'Désactivé';
+                        detailText = 'Boost désactivé';
+                    } else if (boostActive) {
+                        const remainingMs = Math.max(0, boostActiveUntil - Date.now());
+                        const totalSeconds = Math.floor(remainingMs / 1000);
+                        const minutes = Math.floor(totalSeconds / 60);
+                        const seconds = totalSeconds % 60;
+                        const formattedSeconds = seconds.toString().padStart(2, '0');
+                        badgeText = `Actif (${minutes}:${formattedSeconds})`;
+                        badgeBg = '#0f8341';
+                        badgeColor = '#fff';
+                    } else {
+                        badgeText = 'Inactif';
+                        badgeBg = '#b12704';
+                        badgeColor = '#fff';
+                    }
+
+                    if (boostStatusBadgeElement) {
+                        boostStatusBadgeElement.textContent = badgeText;
+                        boostStatusBadgeElement.style.backgroundColor = badgeBg;
+                        boostStatusBadgeElement.style.color = badgeColor;
+                    }
+
+                    if (boostManualButtonElement) {
+                        boostManualButtonElement.disabled = !tabBoostEnabled;
+                        boostManualButtonElement.textContent = boostActive ? 'Stopper le boost' : 'Lancer le boost';
+                        boostManualButtonElement.style.backgroundColor = boostActive ? '#b12704' : '#0f8341';
+                        boostManualButtonElement.style.border = boostActive ? '1px solid #b12704' : '1px solid #0f8341';
+                        boostManualButtonElement.style.opacity = boostManualButtonElement.disabled ? '0.6' : '1';
+                        boostManualButtonElement.style.cursor = boostManualButtonElement.disabled ? 'not-allowed' : 'pointer';
+                    }
+
+                    if (!tabBoostEnabled) {
+                        stopBoostStatusUpdates();
+                    }
                 }
 
                 function updateDefaultSetting(key, value) {
@@ -13434,6 +14077,22 @@ ${addressOptions.length && isPlus && apiOk ? `
                             defaultUseFixedHour = value;
                             GM_setValue('useFixedHour', value);
                             break;
+                        case 'boostEnabled':
+                            defaultBoostEnabled = value;
+                            GM_setValue('refreshBoostEnabled', value);
+                            break;
+                        case 'boostDelay':
+                            defaultBoostDelay = value;
+                            GM_setValue('refreshBoostDelay', value);
+                            break;
+                        case 'boostDuration':
+                            defaultBoostDuration = value;
+                            GM_setValue('refreshBoostDuration', value);
+                            break;
+                        case 'boostBypassSlot':
+                            defaultBoostBypassSlot = value;
+                            GM_setValue('refreshBoostBypassSlot', value);
+                            break;
                         default:
                             break;
                     }
@@ -13456,6 +14115,28 @@ ${addressOptions.length && isPlus && apiOk ? `
                         case 'useFixedHour':
                             tabUseFixedHour = value;
                             break;
+                        case 'boostEnabled':
+                            tabBoostEnabled = value;
+                            if (!tabBoostEnabled) {
+                                boostActiveUntil = null;
+                                clearBoostState();
+                            }
+                            break;
+                        case 'boostDelay':
+                            tabBoostDelay = value;
+                            break;
+                        case 'boostDuration':
+                            tabBoostDuration = value;
+                            if (isBoostActive()) {
+                                const until = Date.now() + (Math.max(0, tabBoostDuration) * 60000);
+                                boostActiveUntil = until;
+                                saveBoostState(until);
+                                startBoostStatusUpdates();
+                            }
+                            break;
+                        case 'boostBypassSlot':
+                            tabBoostBypassSlot = value;
+                            break;
                         default:
                             break;
                     }
@@ -13470,6 +14151,13 @@ ${addressOptions.length && isPlus && apiOk ? `
                     if (key === 'enableRefresh' && enableRefreshCheckboxElement && enableRefreshCheckboxElement.checked !== tabEnableRefresh) {
                         enableRefreshCheckboxElement.checked = tabEnableRefresh;
                     }
+
+                    if (tabBoostEnabled) {
+                        startBoostStatusUpdates();
+                    } else {
+                        stopBoostStatusUpdates();
+                    }
+                    updateBoostStatusDisplay();
                 }
 
                 function updateAutoRefreshUIState() {
@@ -13539,14 +14227,17 @@ ${addressOptions.length && isPlus && apiOk ? `
                     }
 
                     //Autorise le refresh dynamique seulement si on est dans la plage (ou si autoRefreshTimeSlot désactivé)
-                    const allowDynamic = (!autoRefreshTimeSlot || inSlot) && tabEnableRefresh;
+                    const boostActive = isBoostActive();
+                    const bypassSlot = boostActive && tabBoostBypassSlot;
+                    const allowDynamic = tabEnableRefresh && ((!autoRefreshTimeSlot || inSlot) || bypassSlot);
                     //Si ni dynamique ni horaire fixé, on ne schedule rien
                     if (!allowDynamic && !tabUseFixedHour) return;
 
                     //Calcul du délai dynamique
                     const safeRandomDelay = Math.max(0, tabRandomDelay);
                     const randomSec = getRandomInteger(0, safeRandomDelay);
-                    const totalDelaySec = (tabRefreshDelay * 60) + randomSec;
+                    const effectiveDelayMinutes = boostActive ? tabBoostDelay : tabRefreshDelay;
+                    const totalDelaySec = (Math.max(0, effectiveDelayMinutes) * 60) + randomSec;
                     let nextRefreshTime = Date.now() + (totalDelaySec * 1000);
                     let useHoraire = false;
 
@@ -13571,7 +14262,7 @@ ${addressOptions.length && isPlus && apiOk ? `
                         }
                     }
 
-                    return { nextRefreshTime, useHoraire };
+                    return { nextRefreshTime, useHoraire, isBoostActive: boostActive };
                 }
 
                 //Ajout de l'UI pour activer le refresh, choisir page, délais, etc.
@@ -13579,17 +14270,81 @@ ${addressOptions.length && isPlus && apiOk ? `
                     const container = document.createElement('div');
                     container.classList.add('refresh');
                     container.style.display = 'flex';
-                    container.style.alignItems = 'center';
+                    container.style.flexDirection = 'column';
+                    container.style.alignItems = 'stretch';
                     container.style.position = 'relative';
                     container.style.top = '0px';
                     container.style.left = '20px';
+                    container.style.gap = '6px';
+                    container.style.borderRadius = '14px';
+
+                    const toggleRow = document.createElement('div');
+                    toggleRow.style.display = 'flex';
+                    toggleRow.style.alignItems = 'center';
+                    toggleRow.style.gap = '8px';
+                    toggleRow.style.cursor = 'pointer';
+                    toggleRow.style.userSelect = 'none';
+                    container.appendChild(toggleRow);
+
+                    const toggleIcon = document.createElement('span');
+                    toggleIcon.style.fontWeight = 'bold';
+                    toggleIcon.style.fontSize = '14px';
+                    toggleIcon.style.minWidth = '12px';
+                    toggleIcon.style.textAlign = 'center';
+                    toggleRow.appendChild(toggleIcon);
+
+                    const toggleTitle = document.createElement('span');
+                    toggleTitle.textContent = 'Auto-refresh';
+                    toggleTitle.style.fontWeight = 'bold';
+                    toggleTitle.style.fontSize = '12px';
+                    toggleRow.appendChild(toggleTitle);
+
+                    const helpButton = document.createElement('button');
+                    helpButton.type = 'button';
+                    helpButton.textContent = '?';
+                    helpButton.style.width = '22px';
+                    helpButton.style.height = '22px';
+                    helpButton.style.borderRadius = '50%';
+                    helpButton.style.border = '1px solid #bbb';
+                    helpButton.style.backgroundColor = '#fff';
+                    helpButton.style.color = '#333';
+                    helpButton.style.cursor = 'pointer';
+                    helpButton.style.fontWeight = 'bold';
+                    helpButton.style.display = 'flex';
+                    helpButton.style.alignItems = 'center';
+                    helpButton.style.justifyContent = 'center';
+                    helpButton.style.fontSize = '12px';
+                    helpButton.style.padding = '0';
+                    toggleRow.appendChild(helpButton);
+
+                    helpButton.addEventListener('click', (event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        const helpMessage = [
+                            "L'auto refresh recharge automatiquement la page selon le délai choisi.",
+                            "Définissez un délai principal en minutes et, si besoin, ajoutez un aléa en secondes pour varier les rafraîchissements.",
+                            "Le boost s'active à la découverte d'un nouveau produit. Quand il est actif, le délai boost remplace le délai principal pendant la durée configurée et utilise la même valeur aléatoire.",
+                            "Vous pouvez déclencher le boost manuellement avec le bouton \"Lancer le boost\"",
+                            "Astuce : vous pouvez saisir des valeurs décimales pour les délais (ex. 0.5 min = 30 secondes, 1.5 min = 1 minute 30)."
+                        ].join('\n\n');
+                        alert(helpMessage);
+                    });
+
+                    if (autoRefreshLimitToFirstTab) {
+                        tabBadgeElement = document.createElement('span');
+                        tabBadgeElement.style.fontWeight = 'bold';
+                        tabBadgeElement.style.fontSize = '12px';
+                        tabBadgeElement.style.padding = '4px 12px';
+                        tabBadgeElement.style.borderRadius = '14px';
+                        tabBadgeElement.style.marginLeft = '4px';
+                        toggleRow.appendChild(tabBadgeElement);
+                    }
 
                     const optionsContainer = document.createElement('div');
                     optionsContainer.classList.add('options-refresh');
-                    optionsContainer.style.marginLeft = '10px';
                     optionsContainer.style.backgroundColor = '#f9f9f9';
                     optionsContainer.style.border = '1px solid #ddd';
-                    optionsContainer.style.borderRadius = '8px';
+                    optionsContainer.style.borderRadius = '14px';
                     optionsContainer.style.padding = '10px';
                     optionsContainer.style.display = 'flex';
                     optionsContainer.style.flexDirection = 'column';
@@ -13597,6 +14352,7 @@ ${addressOptions.length && isPlus && apiOk ? `
                     optionsContainer.style.maxWidth = '800px';
                     optionsContainer.style.gap = '6px';
                     optionsContainerElement = optionsContainer;
+                    container.appendChild(optionsContainer);
 
                     if (autoRefreshLimitToFirstTab) {
                         headerRowElement = document.createElement('div');
@@ -13606,13 +14362,6 @@ ${addressOptions.length && isPlus && apiOk ? `
                         headerRowElement.style.rowGap = '4px';
                         headerRowElement.style.columnGap = '10px';
                         optionsContainer.appendChild(headerRowElement);
-
-                        tabBadgeElement = document.createElement('span');
-                        tabBadgeElement.style.fontWeight = 'bold';
-                        tabBadgeElement.style.fontSize = '12px';
-                        tabBadgeElement.style.padding = '2px 10px';
-                        tabBadgeElement.style.borderRadius = '999px';
-                        headerRowElement.appendChild(tabBadgeElement);
                     }
 
                     controlsRowElement = document.createElement('div');
@@ -13637,7 +14386,12 @@ ${addressOptions.length && isPlus && apiOk ? `
 
                     enableRefreshCheckbox.addEventListener('click', function() {
                         handleSettingChange('enableRefresh', enableRefreshCheckbox.checked);
-                        scheduleRefresh();
+                        if (enableRefreshCheckbox.checked && shouldActivateRefreshBoost && tabBoostEnabled) {
+                            activateBoost();
+                            shouldActivateRefreshBoost = false;
+                        } else {
+                            scheduleRefresh();
+                        }
                     });
 
                     //Sélection de la page
@@ -13741,6 +14495,211 @@ ${addressOptions.length && isPlus && apiOk ? `
                         scheduleRefresh();
                     });
 
+                    const boostContainer = document.createElement('div');
+                    boostContainer.style.display = 'flex';
+                    boostContainer.style.flexDirection = 'column';
+                    boostContainer.style.gap = '6px';
+                    boostContainer.style.paddingTop = '6px';
+                    boostContainer.style.borderTop = '1px solid #0f1111';
+                    optionsContainer.appendChild(boostContainer);
+
+                    const boostToggleRow = document.createElement('div');
+                    boostToggleRow.style.display = 'flex';
+                    boostToggleRow.style.alignItems = 'center';
+                    boostToggleRow.style.gap = '8px';
+                    boostToggleRow.style.cursor = 'pointer';
+                    boostToggleRow.style.userSelect = 'none';
+                    boostContainer.appendChild(boostToggleRow);
+
+                    const boostToggleIcon = document.createElement('span');
+                    boostToggleIcon.style.fontWeight = 'bold';
+                    boostToggleIcon.style.fontSize = '14px';
+                    boostToggleIcon.style.minWidth = '12px';
+                    boostToggleIcon.style.textAlign = 'center';
+                    boostToggleRow.appendChild(boostToggleIcon);
+
+                    const boostTitle = document.createElement('span');
+                    boostTitle.textContent = 'Boost';
+                    boostTitle.style.fontWeight = 'bold';
+                    boostToggleRow.appendChild(boostTitle);
+
+                    const boostStatusBadge = document.createElement('span');
+                    boostStatusBadge.style.fontSize = '11px';
+                    boostStatusBadge.style.fontWeight = '600';
+                    boostStatusBadge.style.padding = '2px 8px';
+                    boostStatusBadge.style.borderRadius = '999px';
+                    boostStatusBadge.style.marginLeft = '4px';
+                    boostStatusBadgeElement = boostStatusBadge;
+                    boostToggleRow.appendChild(boostStatusBadge);
+
+                    const boostContent = document.createElement('div');
+                    boostContent.style.display = 'flex';
+                    boostContent.style.alignItems = 'center';
+                    boostContent.style.flexWrap = 'wrap';
+                    boostContent.style.columnGap = '15px';
+                    boostContent.style.rowGap = '6px';
+                    boostContainer.appendChild(boostContent);
+
+                    const boostEnableLabel = document.createElement('label');
+                    boostEnableLabel.style.display = 'flex';
+                    boostEnableLabel.style.alignItems = 'center';
+                    boostEnableLabel.style.gap = '5px';
+                    const boostEnableCheckbox = document.createElement('input');
+                    boostEnableCheckbox.type = 'checkbox';
+                    boostEnableLabel.appendChild(boostEnableCheckbox);
+                    boostEnableLabel.appendChild(document.createTextNode('Activer'));
+                    boostContent.appendChild(boostEnableLabel);
+
+                    const boostDelayContainer = document.createElement('div');
+                    boostDelayContainer.style.display = 'flex';
+                    boostDelayContainer.style.flexDirection = 'column';
+                    boostDelayContainer.style.alignItems = 'center';
+                    const boostDelayLabel = document.createElement('label');
+                    boostDelayLabel.innerText = 'Délai boost (min)';
+                    boostDelayLabel.style.display = 'block';
+                    boostDelayContainer.appendChild(boostDelayLabel);
+                    const boostDelayInput = document.createElement('input');
+                    boostDelayInput.type = 'number';
+                    boostDelayInput.style.width = '60px';
+                    boostDelayInput.style.textAlign = 'center';
+                    boostDelayInput.min = '0';
+                    boostDelayInput.step = '0.1';
+                    boostDelayContainer.appendChild(boostDelayInput);
+                    boostContent.appendChild(boostDelayContainer);
+
+                    const boostDurationContainer = document.createElement('div');
+                    boostDurationContainer.style.display = 'flex';
+                    boostDurationContainer.style.flexDirection = 'column';
+                    boostDurationContainer.style.alignItems = 'center';
+                    const boostDurationLabel = document.createElement('label');
+                    boostDurationLabel.innerText = 'Durée boost (min)';
+                    boostDurationLabel.style.display = 'block';
+                    boostDurationContainer.appendChild(boostDurationLabel);
+                    const boostDurationInput = document.createElement('input');
+                    boostDurationInput.type = 'number';
+                    boostDurationInput.style.width = '60px';
+                    boostDurationInput.style.textAlign = 'center';
+                    boostDurationInput.min = '0';
+                    boostDurationInput.step = '0.1';
+                    boostDurationContainer.appendChild(boostDurationInput);
+                    boostContent.appendChild(boostDurationContainer);
+
+                    const boostBypassLabel = document.createElement('label');
+                    boostBypassLabel.style.display = 'flex';
+                    boostBypassLabel.style.alignItems = 'center';
+                    boostBypassLabel.style.gap = '5px';
+                    const boostBypassCheckbox = document.createElement('input');
+                    boostBypassCheckbox.type = 'checkbox';
+                    boostBypassLabel.appendChild(boostBypassCheckbox);
+                    boostBypassLabel.appendChild(document.createTextNode('Ignorer la plage horaire'));
+                    boostContent.appendChild(boostBypassLabel);
+
+                    const boostActionsRow = document.createElement('div');
+                    boostActionsRow.style.display = 'flex';
+                    boostActionsRow.style.alignItems = 'center';
+                    boostActionsRow.style.gap = '10px';
+                    boostActionsRow.style.flex = '1';
+                    boostContent.appendChild(boostActionsRow);
+
+                    boostManualButtonElement = document.createElement('button');
+                    boostManualButtonElement.type = 'button';
+                    boostManualButtonElement.textContent = 'Lancer le boost';
+                    boostManualButtonElement.style.fontWeight = 'bold';
+                    boostManualButtonElement.style.padding = '4px 12px';
+                    boostManualButtonElement.style.borderRadius = '8px';
+                    boostManualButtonElement.style.border = '1px solid #0f8341';
+                    boostManualButtonElement.style.backgroundColor = '#0f8341';
+                    boostManualButtonElement.style.color = '#fff';
+                    boostManualButtonElement.style.cursor = 'pointer';
+                    boostManualButtonElement.style.fontSize = '12px';
+                    boostActionsRow.appendChild(boostManualButtonElement);
+
+                    boostManualButtonElement.addEventListener('click', (event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        if (!tabBoostEnabled) {
+                            alert('Activez le boost pour pouvoir le lancer manuellement.');
+                            return;
+                        }
+                        if (isBoostActive()) {
+                            boostActiveUntil = null;
+                            clearBoostState();
+                            updateBoostStatusDisplay();
+                            scheduleRefresh();
+                        } else {
+                            activateBoost();
+                            shouldActivateRefreshBoost = false;
+                        }
+                    });
+
+                    boostStatusTextElement = document.createElement('span');
+                    boostStatusTextElement.style.fontSize = '12px';
+                    boostStatusTextElement.style.fontWeight = '500';
+                    boostActionsRow.appendChild(boostStatusTextElement);
+
+                    function updateBoostControlsState() {
+                        const disabled = !tabBoostEnabled;
+                        boostDelayInput.disabled = disabled;
+                        boostDurationInput.disabled = disabled;
+                        boostBypassCheckbox.disabled = disabled;
+                        if (boostManualButtonElement) {
+                            boostManualButtonElement.disabled = disabled;
+                            boostManualButtonElement.style.opacity = disabled ? '0.6' : '1';
+                            boostManualButtonElement.style.cursor = disabled ? 'not-allowed' : 'pointer';
+                        }
+                    }
+
+                    function updateBoostToggleIcon() {
+                        boostToggleIcon.textContent = refreshBoostCollapsed ? '+' : '−';
+                    }
+
+                    function syncBoostVisibility() {
+                        boostContent.style.display = refreshBoostCollapsed ? 'none' : 'flex';
+                        updateBoostToggleIcon();
+                    }
+
+                    boostToggleRow.addEventListener('click', () => {
+                        refreshBoostCollapsed = !refreshBoostCollapsed;
+                        GM_setValue('refreshBoostCollapsed', refreshBoostCollapsed);
+                        syncBoostVisibility();
+                    });
+
+                    boostEnableCheckbox.addEventListener('click', function() {
+                        handleSettingChange('boostEnabled', boostEnableCheckbox.checked);
+                        updateBoostControlsState();
+                        if (boostEnableCheckbox.checked && shouldActivateRefreshBoost && tabEnableRefresh) {
+                            activateBoost();
+                            shouldActivateRefreshBoost = false;
+                        } else {
+                            scheduleRefresh();
+                        }
+                    });
+
+                    boostDelayInput.addEventListener('change', function() {
+                        let value = Number(boostDelayInput.value);
+                        if (!Number.isFinite(value) || value < 0) {
+                            value = 0;
+                        }
+                        boostDelayInput.value = value;
+                        handleSettingChange('boostDelay', value);
+                        scheduleRefresh();
+                    });
+
+                    boostDurationInput.addEventListener('change', function() {
+                        let value = Number(boostDurationInput.value);
+                        if (!Number.isFinite(value) || value < 0) {
+                            value = 0;
+                        }
+                        boostDurationInput.value = value;
+                        handleSettingChange('boostDuration', value);
+                        scheduleRefresh();
+                    });
+
+                    boostBypassCheckbox.addEventListener('click', function() {
+                        handleSettingChange('boostBypassSlot', boostBypassCheckbox.checked);
+                        scheduleRefresh();
+                    });
+
                     //Checkbox Horaire
                     const fixedHourLabel = document.createElement('label');
                     const fixedHourCheckbox = document.createElement('input');
@@ -13761,7 +14720,22 @@ ${addressOptions.length && isPlus && apiOk ? `
 
                     const logoLink = document.querySelector('#vvp-logo-link');
                     const headerLinksContainer = document.querySelector('.vvp-header-links-container');
-                    logoLink.parentNode.insertBefore(optionsContainer, headerLinksContainer);
+                    logoLink.parentNode.insertBefore(container, headerLinksContainer);
+                    function updateAutoRefreshToggleIcon() {
+                        toggleIcon.textContent = autoRefreshHideUI ? '+' : '−';
+                    }
+
+                    function syncAutoRefreshVisibility() {
+                        optionsContainer.style.display = autoRefreshHideUI ? 'none' : 'flex';
+                        updateAutoRefreshToggleIcon();
+                        updateAutoRefreshUIState();
+                    }
+
+                    toggleRow.addEventListener('click', () => {
+                        autoRefreshHideUI = !autoRefreshHideUI;
+                        GM_setValue('autoRefreshHideUI', autoRefreshHideUI);
+                        syncAutoRefreshVisibility();
+                    });
 
                     //Appliquer les valeurs stockées
                     pageSelect.value = tabPageToRefresh;
@@ -13769,7 +14743,17 @@ ${addressOptions.length && isPlus && apiOk ? `
                     randomDelayInput.value = tabRandomDelay;
                     fixedHourCheckbox.checked = tabUseFixedHour;
                     enableRefreshCheckbox.checked = tabEnableRefresh;
-                    updateAutoRefreshUIState();
+                    boostEnableCheckbox.checked = tabBoostEnabled;
+                    boostDelayInput.value = tabBoostDelay;
+                    boostDurationInput.value = tabBoostDuration;
+                    boostBypassCheckbox.checked = tabBoostBypassSlot;
+                    updateBoostControlsState();
+                    syncBoostVisibility();
+                    syncAutoRefreshVisibility();
+                    updateBoostStatusDisplay();
+                    if (tabBoostEnabled) {
+                        startBoostStatusUpdates();
+                    }
                 }
 
                 //Schedule le refresh et affiche le compte à rebours
@@ -13778,6 +14762,11 @@ ${addressOptions.length && isPlus && apiOk ? `
                         clearInterval(refreshInterval);
                         refreshInterval = null;
                     }
+
+                    if (autoRefreshPaused) {
+                        return;
+                    }
+
                     if (countdownDiv) {
                         countdownDiv.remove();
                         countdownDiv = null;
@@ -13806,18 +14795,9 @@ ${addressOptions.length && isPlus && apiOk ? `
 
                     const now = Date.now();
                     const delay = next.nextRefreshTime - now;
+                    const boostForCountdown = next.isBoostActive;
 
-                    countdownDiv = document.createElement('div');
-                    countdownDiv.style.position = refreshFixed ? 'absolute' : 'fixed';
-                    countdownDiv.style.top = headerEnabled ? refreshVerticalNoHeader : refreshVertical;
-                    countdownDiv.style.left = refreshHorizontal;
-                    countdownDiv.style.transform = 'translateX(-50%)';
-                    countdownDiv.style.backgroundColor = '#191919';
-                    countdownDiv.style.color = '#fff';
-                    countdownDiv.style.padding = '5px';
-                    countdownDiv.style.borderRadius = '5px';
-                    countdownDiv.style.zIndex = '9999';
-                    countdownDiv.style.border = '1px solid rgba(255, 255, 255, 0.3)';
+                    countdownDiv = buildCountdownDiv();
                     document.body.appendChild(countdownDiv);
 
                     function updateCountdown() {
@@ -13842,8 +14822,15 @@ ${addressOptions.length && isPlus && apiOk ? `
                             const minutes = Math.floor(timeLeft / 1000 / 60);
                             const seconds = Math.floor((timeLeft / 1000) % 60);
                             countdownDiv.textContent = '';
+                            const labels = [];
+                            if (boostForCountdown && isBoostActive()) {
+                                labels.push('Boost');
+                            }
                             if (next.useHoraire) {
-                                countdownDiv.textContent += '(Horaire) ';
+                                labels.push('Horaire');
+                            }
+                            if (labels.length > 0) {
+                                countdownDiv.textContent += `(${labels.join(' - ')}) `;
                             }
                             countdownDiv.textContent += `Prochaine actualisation : ${minutes} min. ${seconds} sec.`;
                         }
@@ -13865,6 +14852,10 @@ ${addressOptions.length && isPlus && apiOk ? `
                         updateAutoRefreshUIState();
                         scheduleRefresh();
                     });
+                }
+                if (shouldActivateRefreshBoost && tabBoostEnabled && tabEnableRefresh) {
+                    activateBoost(false);
+                    shouldActivateRefreshBoost = false;
                 }
                 scheduleRefresh();
             }
@@ -13983,6 +14974,8 @@ ${addressOptions.length && isPlus && apiOk ? `
 
                 let pageCount = GM_getValue('rondePageCount', 0);
 
+                let lastRoundSummary = '';
+
                 const playIcon = rondePlayUrl;
                 const stopIcon = rondeStopUrl;
                 const pauseIconUrl = rondePauseUrl;
@@ -14072,6 +15065,34 @@ ${addressOptions.length && isPlus && apiOk ? `
                 timerDisplay.style.display = 'none';
                 container.appendChild(timerDisplay);
 
+                const copySummaryButton = document.createElement('button');
+                copySummaryButton.textContent = 'Copier le résumé';
+                copySummaryButton.className = 'pm-copy-summary-button';
+                copySummaryButton.style.padding = '6px 10px';
+                copySummaryButton.style.cursor = 'pointer';
+                copySummaryButton.style.borderRadius = '6px';
+                copySummaryButton.style.display = 'none';
+                copySummaryButton.style.fontSize = '12px';
+                copySummaryButton.style.marginLeft = '4px';
+                copySummaryButton.style.backgroundColor = '#f0f2f2';
+                copySummaryButton.style.border = '1px solid #0f1111';
+                copySummaryButton.style.color = '#0f1111';
+                copySummaryButton.style.boxShadow = '0 1px 2px rgba(15, 17, 17, 0.15)';
+                copySummaryButton.addEventListener('click', () => {
+                    if (!lastRoundSummary) {
+                        return;
+                    }
+
+                    navigator.clipboard.writeText(lastRoundSummary)
+                        .then(() => {
+                            console.log('[PïckMe] Résumé de la ronde copié via action utilisateur.');
+                        })
+                        .catch(() => {
+                            alert('Impossible de copier automatiquement. Copiez manuellement :\n\n' + lastRoundSummary);
+                        });
+                });
+                container.appendChild(copySummaryButton);
+
                 overlay.appendChild(container);
                 document.body.appendChild(overlay);
 
@@ -14081,7 +15102,7 @@ ${addressOptions.length && isPlus && apiOk ? `
                 }
 
                 //Réinitialisation pour une nouvelle ronde et mise à jour de l'interface
-                function resetRound() {
+                function resetRound({ clearSummary = true } = {}) {
                     GM_setValue('rondeStartTime', null);
                     GM_setValue('rondePageCount', 0);
                     GM_setValue('rondeIsPaused', false);
@@ -14090,6 +15111,12 @@ ${addressOptions.length && isPlus && apiOk ? `
                     pauseButton.style.display = 'none';
                     timerDisplay.style.display = 'none';
                     isPaused = false;
+                    if (clearSummary) {
+                        lastRoundSummary = '';
+                        copySummaryButton.style.display = 'none';
+                    } else if (lastRoundSummary) {
+                        copySummaryButton.style.display = 'flex';
+                    }
                 }
 
                 //Résumé de la ronde
@@ -14127,13 +15154,18 @@ ${addressOptions.length && isPlus && apiOk ? `
                     const message = getMessage(baseTitle);
                     const messageToCopy = getMessage(`**${baseTitle}**`);
 
+                    lastRoundSummary = messageToCopy;
+                    copySummaryButton.style.display = 'flex';
+                    copySummaryButton.textContent = 'Copier le résumé';
+                    copySummaryButton.title = 'Cliquez pour copier le résumé de la ronde';
+
                     navigator.clipboard.writeText(messageToCopy)
                         .then(() => console.log('[PïckMe] Résumé de la ronde copié dans le presse-papiers.'))
                         .catch(err => console.error('Erreur lors de la copie dans le presse-papiers:', err));
 
-                    alert("Copié dans le presse-papiers :\n\n" + message);
+                    alert("Copié dans le presse-papiers :\n\n" + message + "\n\nSi le copier-coller automatique est bloqué, cliquez sur le bouton \"Copier le résumé\".");
 
-                    resetRound();
+                    resetRound({ clearSummary: false });
                 }
 
                 //Fonction de démarrage du compte à rebours
@@ -14226,6 +15258,8 @@ ${addressOptions.length && isPlus && apiOk ? `
                     } else {
                         //Démarrage de la ronde
                         GM_setValue('rondeContinue', true);
+                        lastRoundSummary = '';
+                        copySummaryButton.style.display = 'none';
                         if (!startTime) {
                             startTime = new Date();
                             GM_setValue('rondeStartTime', startTime.toISOString());
