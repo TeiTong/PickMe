@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PickMe
 // @namespace    http://tampermonkey.net/
-// @version      3.5.1
+// @version      3.6.0
 // @description  Plugin d'aide à la navigation pour les membres du discord Amazon Vine FR : https://discord.gg/amazonvinefr
 // @author       Créateur/Codeur principal : MegaMan / Codeur secondaire : Sulff / Testeurs : Louise, JohnnyBGoody, L'avocat du Diable et Popato (+ du code de lelouch_di_britannia, FMaz008 et Thorvarium)
 // @match        https://www.amazon.fr/vine/vine-items
@@ -26,7 +26,7 @@
 // @grant        GM_listValues
 // @run-at       document-start
 // @noframes
-// @require      https://raw.githubusercontent.com/teitong/reviewremember/main/ReviewRememberPM.user.js?v=1.9.10
+// @require      https://raw.githubusercontent.com/teitong/reviewremember/main/ReviewRememberPM.user.js?v=1.10.0
 // @require      https://vinepick.me/scripts/jquery-3.7.1.min.js
 // @require      https://vinepick.me/scripts/heic2any.min.js
 //==/UserScript==
@@ -663,15 +663,21 @@ NOTES:
 
             function removeBalanceWarning(info) {
                 const alert = document.getElementById(ALERT_ID);
+                const target = info && info.container ? info.container : null;
+                const wasApplied = target && target.dataset.pmBalanceWarningApplied === 'true';
+
+                if (!alert && !wasApplied) {
+                    return;
+                }
+
                 if (alert && alert.parentElement) {
                     alert.remove();
                 }
 
-                if (!info || !info.container) {
+                if (!target || !wasApplied) {
                     return;
                 }
 
-                const target = info.container;
                 target.classList.remove(HIGHLIGHT_CONTAINER_CLASS);
 
                 const wrapper = target.querySelector('.pm-balance-warning-wrapper');
