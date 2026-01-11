@@ -18952,7 +18952,7 @@ ${addressOptions.length && isPlus && apiOk ? `
                 }
 
                 if (filterEnabled === null) {
-                    filterEnabled = 'true';
+                    filterEnabled = 'false';
                     localStorage.setItem('filterEnabled', filterEnabled);
                 }
 
