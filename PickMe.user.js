@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PickMe
 // @namespace    http://tampermonkey.net/
-// @version      3.6.4
+// @version      3.6.5
 // @description  Plugin d'aide à la navigation pour les membres du discord Amazon Vine FR : https://discord.gg/amazonvinefr
 // @author       Créateur/Codeur principal : MegaMan / Codeur secondaire : Sulff, ChatGPT, Claude et Gemini / Testeurs : Louise, L'avocat du Diable et Popato (+ du code de lelouch_di_britannia, FMaz008 et Thorvarium)
 // @match        https://www.amazon.fr/vine/vine-items
@@ -7952,8 +7952,25 @@ ${addressOptions.length && isPlus && apiOk ? `
 
 
             function saveFavConfig() {
-                const favWords = document.getElementById('favWords').value;
-                const hideWords = document.getElementById('hideWords').value;
+                let favWords = document.getElementById('favWords').value;
+                let hideWords = document.getElementById('hideWords').value;
+
+                //Nettoyage des espaces autour des virgules
+                favWords = favWords.replace(/\s*,\s*/g, ',').trim();
+                hideWords = hideWords.replace(/\s*,\s*/g, ',').trim();
+
+                //Suppression des virgules au début et à la fin
+                favWords = favWords.replace(/^,+|,+$/g, '');
+                hideWords = hideWords.replace(/^,+|,+$/g, '');
+
+                //Sécurité contre les doubles virgules
+                if (favWords.includes(',,') || hideWords.includes(',,')) {
+                    alert('Les doubles virgules ne sont pas autorisées dans la liste de mots-clés.');
+                    return;
+                }
+
+                document.getElementById('favWords').value = favWords;
+                document.getElementById('hideWords').value = hideWords;
                 GM_setValue('favWords', favWords);
                 GM_setValue('hideWords', hideWords);
                 document.getElementById('favConfigPopup').remove();
@@ -9241,7 +9258,14 @@ ${addressOptions.length && isPlus && apiOk ? `
 
             function syncFavConfig() {
                 if (confirm('Cela remplacera votre liste de mots-clés sur discord par celle de PickMe, êtes-vous sûr ?')) {
-                    const favWords = document.getElementById('favWords').value;
+                    let favWords = document.getElementById('favWords').value;
+                    favWords = favWords.replace(/\s*,\s*/g, ',').trim();
+                    favWords = favWords.replace(/^,+|,+$/g, '');
+                    if (favWords.includes(',,')) {
+                        const syncButton = document.getElementById('syncFavConfig');
+                        syncButton.innerHTML = 'Les doubles virgules ne sont pas autorisées.';
+                        return;
+                    }
                     const formData = new URLSearchParams({
                         version: version,
                         token: API_TOKEN,
