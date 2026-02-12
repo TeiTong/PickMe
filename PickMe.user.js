@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         PickMe
 // @namespace    http://tampermonkey.net/
-// @version      3.6.3
+// @version      3.6.4
 // @description  Plugin d'aide à la navigation pour les membres du discord Amazon Vine FR : https://discord.gg/amazonvinefr
-// @author       Créateur/Codeur principal : MegaMan / Codeur secondaire : Sulff / Testeurs : Louise, JohnnyBGoody, L'avocat du Diable et Popato (+ du code de lelouch_di_britannia, FMaz008 et Thorvarium)
+// @author       Créateur/Codeur principal : MegaMan / Codeur secondaire : Sulff, ChatGPT, Claude et Gemini / Testeurs : Louise, L'avocat du Diable et Popato (+ du code de lelouch_di_britannia, FMaz008 et Thorvarium)
 // @match        https://www.amazon.fr/vine/vine-items
 // @match        https://www.amazon.fr/vine/vine-items?queue=*
 // @match        https://www.amazon.fr/vine/vine-reviews*
@@ -1301,6 +1301,76 @@ NOTES:
                 .catch(error => {
                 console.error("Erreur de requête:", error);
                 throw error;
+            });
+        }
+
+        //Récupérer les infos de plusieurs produits dans l'API en un seul appel
+        function infoProducts(asins) {
+            const cleanedAsins = [...new Set((asins || []).filter(Boolean))];
+            if (cleanedAsins.length === 0) {
+                return Promise.resolve({});
+            }
+
+            const formData = new URLSearchParams({
+                version: GM_info.script.version,
+                token: apiKey,
+                asins: JSON.stringify(cleanedAsins),
+            });
+
+            const parseInfoProductData = (data) => {
+                if (!data || typeof data !== 'object') return null;
+                const { date_last, title, linkText, linkUrl, main_image } = data;
+                const date_last_eu = convertToEuropeanDate(date_last);
+                return { date_last_eu, title, linkText, linkUrl, main_image };
+            };
+
+            return fetch(baseUrlPickme + "/shyrka/infoasin", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/x-www-form-urlencoded"
+                },
+                body: formData.toString()
+            })
+                .then(async (response) => {
+                if (response.status !== 200) {
+                    throw new Error(`Erreur HTTP: ${response.status} ${response.statusText}`);
+                }
+
+                const data = await response.json();
+
+                //Compatibilité descendante :si l'API ne gère pas encore le batch, on bascule en appels unitaires
+                if (!data || !data.products || typeof data.products !== 'object') {
+                    const fallbackEntries = await Promise.all(cleanedAsins.map(async (asin) => {
+                        try {
+                            const productInfo = await infoProduct(asin);
+                            return [asin, productInfo];
+                        } catch (error) {
+                            return [asin, null];
+                        }
+                    }));
+                    return Object.fromEntries(fallbackEntries);
+                }
+
+                const result = {};
+                cleanedAsins.forEach((asin) => {
+                    result[asin] = parseInfoProductData(data.products[asin]);
+                });
+                return result;
+            })
+                .catch(async (error) => {
+                console.error("Erreur de requête batch infoasin:", error);
+
+                //Compatibilité descendante en cas d'échec réseau/format du batch
+                const fallbackEntries = await Promise.all(cleanedAsins.map(async (asin) => {
+                    try {
+                        const productInfo = await infoProduct(asin);
+                        return [asin, productInfo];
+                    } catch (innerError) {
+                        return [asin, null];
+                    }
+                }));
+
+                return Object.fromEntries(fallbackEntries);
             });
         }
 
@@ -5735,27 +5805,25 @@ li.a-last a span.larr {      /* Cible le span larr dans les li a-last */
                 });
             }
 
-            //Tester si le produit est NSFW
-            function NSFWTest(productUrl) {
-                const formData = new URLSearchParams({
-                    version: version,
-                    token: API_TOKEN,
-                    url: productUrl,
-                    queue: valeurQueue,
-                });
-
+            //Tester si les produits sont NSFW
+            function NSFWTest(productUrls) {
                 return fetch(baseUrlPickme + "/shyrka/nsfw", {
                     method: "POST",
                     headers: {
-                        "Content-Type": "application/x-www-form-urlencoded"
+                        "Content-Type": "application/json"
                     },
-                    body: formData.toString()
+                    body: JSON.stringify({
+                        version: version,
+                        token: API_TOKEN,
+                        urls: productUrls,
+                        queue: valeurQueue,
+                    })
                 })
                     .then(response => {
-                    return response.text().then(text => {
-                        //Convertit la réponse en entier (0 ou 1)
-                        return text;
-                    });
+                    if (!response.ok) {
+                        throw new Error(`Erreur API NSFW (${response.status})`);
+                    }
+                    return response.json();
                 })
                     .catch(error => {
                     console.error(error);
@@ -5767,6 +5835,7 @@ li.a-last a span.larr {      /* Cible le span larr dans les li a-last */
             const items = document.querySelectorAll('.vvp-item-tile');
             const listElements = [];
             const listElementsOrder = [];
+            const nsfwCandidates = [];
 
             let elementsToPrepend = [];
 
@@ -5878,30 +5947,8 @@ li.a-last a span.larr {      /* Cible le span larr dans les li a-last */
                 //Récupérer l'enrollment
                 let enrollment = getEnrollment(element);
 
-                if (NSFWEnabled || NSFWHide) {
-                    (async () => {
-                        const NSFWInfo = await NSFWTest(productUrl);
-                        if (NSFWInfo === '1') {
-                            if (NSFWHide && hideEnabled) {
-                                const hideKey = getAsinEnrollment(asin, enrollment);
-                                const etatCacheKey = hideKey + '_c';
-                                localStorage.setItem(etatCacheKey, '1');
-                                element.style.display = 'none';
-                            }
-                            if (NSFWEnabled) {
-                                imgElement.style.transition = 'filter 0.3s ease';
-                                imgElement.style.filter = `blur(${blurLevel}px)`;
-
-                                imgElement.addEventListener('click', () => {
-                                    if (imgElement.style.filter === `blur(${blurLevel}px)`) {
-                                        imgElement.style.filter = 'blur(0px)';
-                                    } else {
-                                        imgElement.style.filter = `blur(${blurLevel}px)`;
-                                    }
-                                });
-                            }
-                        }
-                    })();
+                if ((NSFWEnabled || NSFWHide) && productUrl) {
+                    nsfwCandidates.push({ element, imgElement, asin, enrollment, productUrl });
                 }
                 //Ajouter les données récupérées dans le tableau
                 listElements.push({
@@ -5982,7 +6029,55 @@ li.a-last a span.larr {      /* Cible le span larr dans les li a-last */
                 changeButtonProduct(element);
             });
 
-            Promise.all(processingPromises).then(() => {
+            Promise.all(processingPromises).then(async () => {
+                if ((NSFWEnabled || NSFWHide) && nsfwCandidates.length > 0) {
+                    try {
+                        const urlsToCheck = nsfwCandidates.map(item => item.productUrl);
+                        const nsfwResponse = await NSFWTest(urlsToCheck);
+                        const nsfwResults = nsfwResponse && nsfwResponse.results ? nsfwResponse.results : {};
+
+                        nsfwCandidates.forEach(item => {
+                            if (nsfwResults[item.productUrl] === '1') {
+                                if (NSFWHide && hideEnabled) {
+                                    const hideKey = getAsinEnrollment(item.asin, item.enrollment);
+                                    const etatCacheKey = hideKey + '_c';
+                                    localStorage.setItem(etatCacheKey, '1');
+                                    item.element.style.display = 'none';
+                                }
+                                if (NSFWEnabled && item.imgElement) {
+                                    item.imgElement.style.transition = 'filter 0.3s ease';
+                                    item.imgElement.style.filter = `blur(${blurLevel}px)`;
+                                    item.imgElement.dataset.pmNsfw = 'true';
+
+                                    if (item.imgElement.dataset.pmNsfwToggleBound !== 'true') {
+                                        item.imgElement.addEventListener('click', (event) => {
+                                            event.preventDefault();
+                                            event.stopImmediatePropagation();
+                                            if (item.imgElement.style.filter === `blur(${blurLevel}px)`) {
+                                                item.imgElement.style.filter = 'blur(0px)';
+                                            } else {
+                                                item.imgElement.style.filter = `blur(${blurLevel}px)`;
+                                            }
+                                        }, true);
+                                        item.imgElement.dataset.pmNsfwToggleBound = 'true';
+                                    }
+
+                                    if (zoomEnabled && item.imgElement.dataset.pmNsfwZoomBound !== 'true') {
+                                        item.imgElement.addEventListener('dblclick', (event) => {
+                                            event.preventDefault();
+                                            event.stopPropagation();
+                                            openImageOverlay(item.imgElement.src);
+                                        });
+                                        item.imgElement.dataset.pmNsfwZoomBound = 'true';
+                                    }
+                                }
+                            }
+                        });
+                    } catch (error) {
+                        console.error(error);
+                    }
+                }
+
                 GM_setValue("storedProducts", JSON.stringify(storedProducts)); //Sauvegarder les changements (après le précédent traitement)
 
                 //On remonte les produits dans leur ordre initial
@@ -10189,25 +10284,26 @@ ${addressOptions.length && isPlus && apiOk ? `
 
                         const favoris = [];
                         const listASINS = [];
-                        const promises = Object.keys(localStorage).map(async (key) => {
+                        const asinKeys = [];
+                        Object.keys(localStorage).forEach((key) => {
                             if (key.endsWith('_f')) {
                                 const favori = localStorage.getItem(key);
                                 if (favori === '1') {
                                     const asin = key.split('_f')[0]; //Extraire l'ASIN de la clé
                                     listASINS.push("https://www.amazon.fr/dp/" + asin);
-                                    try {
-                                        const productInfo = await infoProduct(asin); //Appel à la fonction infoProduct avec l'ASIN
-                                        const lastSeenDate = productInfo.date_last_eu ? parseEuropeanDate(productInfo.date_last_eu) : null;
-                                        const timeDiff = lastSeenDate ? new Date() - lastSeenDate : 0;
-                                        favoris.push({ asin, key, productInfo, timeDiff });
-                                    } catch (error) {
-                                        console.error("Erreur lors de la récupération des informations du produit:", error);
-                                    }
+                                    asinKeys.push({ asin, key });
                                 }
                             }
                         });
 
-                        await Promise.all(promises);
+                        const productsByAsin = await infoProducts(asinKeys.map(item => item.asin));
+                        asinKeys.forEach(({ asin, key }) => {
+                            const productInfo = productsByAsin[asin];
+                            if (!productInfo) return;
+                            const lastSeenDate = productInfo.date_last_eu ? parseEuropeanDate(productInfo.date_last_eu) : null;
+                            const timeDiff = lastSeenDate ? new Date() - lastSeenDate : 0;
+                            favoris.push({ asin, key, productInfo, timeDiff });
+                        });
 
                         //Appliquer le tri en fonction de `isTriInverse`
                         favoris.sort((a, b) => {
@@ -11322,6 +11418,33 @@ ${addressOptions.length && isPlus && apiOk ? `
                 const items = document.querySelectorAll('.vvp-' + tab + '-table--row');
                 if (items.length === 0) return;
 
+                const pendingAsins = [];
+                const pendingAsinsSet = new Set();
+                for (const item of items) {
+                    const productLink = item.querySelector('.vvp-' + tab + '-table--text-col a');
+                    if (productLink) continue;
+
+                    let asinToLoad = null;
+                    if (!isMobile()) {
+                        const asinElement = item.querySelector('.vvp-' + tab + '-table--text-col');
+                        if (asinElement && asinElement.childNodes.length > 0 && asinElement.childNodes[0].nodeValue) {
+                            asinToLoad = asinElement.childNodes[0].nodeValue.trim();
+                        }
+                    } else if (tab == "reviews") {
+                        const asinElement = item.querySelector('.vvp-' + tab + '-table--text-col');
+                        asinToLoad = asinElement && asinElement.childNodes.length > 0 && asinElement.childNodes[0].nodeValue
+                            ? asinElement.childNodes[0].nodeValue.trim()
+                            : null;
+                    }
+
+                    if (asinToLoad && !pendingAsinsSet.has(asinToLoad)) {
+                        pendingAsinsSet.add(asinToLoad);
+                        pendingAsins.push(asinToLoad);
+                    }
+                }
+
+                const pendingProductsByAsin = await infoProducts(pendingAsins);
+
                 for (const item of items) {
                     const imageElement = item.querySelector('.vvp-' + tab + '-table--image-col img');
                     let productLink = item.querySelector('.vvp-' + tab + '-table--text-col a');
@@ -11333,7 +11456,7 @@ ${addressOptions.length && isPlus && apiOk ? `
                             if (asinElement && asinElement.childNodes.length > 0 && asinElement.childNodes[0].nodeValue) {
 
                                 let asin = asinElement ? asinElement.childNodes[0].nodeValue.trim() : null;
-                                const productInfo = await infoProduct(asin);
+                                const productInfo = pendingProductsByAsin[asin];
                                 if (productInfo && productInfo.title) {
                                     asinElement.childNodes[0].nodeValue = "(" + asin + ") " + productInfo.title || asin;
                                 }
@@ -11349,7 +11472,7 @@ ${addressOptions.length && isPlus && apiOk ? `
                             if (tab == "reviews") {
                                 const asinElement = item.querySelector('.vvp-' + tab + '-table--text-col');
                                 let asin = asinElement ? asinElement.childNodes[0].nodeValue.trim() : null;
-                                const productInfo = await infoProduct(asin);
+                                const productInfo = pendingProductsByAsin[asin];
                                 if (productInfo && productInfo.title) {
                                     asinElement.childNodes[0].nodeValue = "(" + asin + ") " + productInfo.title || asin;
                                 }
