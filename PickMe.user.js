@@ -11699,6 +11699,41 @@ ${addressOptions.length && isPlus && apiOk ? `
 
             //Appel API pour la quantité de produits
             function qtyProducts() {
+                const qtyProductsDataCacheKey = 'qtyProductsDataCache';
+
+                function getStoredQtyProductsData() {
+                    const storedData = GM_getValue(qtyProductsDataCacheKey, null);
+                    if (Array.isArray(storedData) && storedData.length > 0 && typeof storedData[0] === 'object') {
+                        return storedData;
+                    }
+                    return null;
+                }
+
+                function hasValidQtyValue(value) {
+                    return typeof value !== 'undefined' && value !== null && value !== 'undefined';
+                }
+
+                function mergeQtyProductsDataWithMemory(currentData, storedData) {
+                    if (!Array.isArray(currentData) || currentData.length === 0 || typeof currentData[0] !== 'object') {
+                        return storedData;
+                    }
+
+                    const currentItem = currentData[0];
+                    const storedItem = (Array.isArray(storedData) && storedData.length > 0 && typeof storedData[0] === 'object') ? storedData[0] : {};
+                    const mergedItem = {
+                        ...storedItem,
+                        ...currentItem
+                    };
+
+                    Object.keys(storedItem).forEach((key) => {
+                        if (!hasValidQtyValue(currentItem[key])) {
+                            mergedItem[key] = storedItem[key];
+                        }
+                    });
+
+                    return [mergedItem];
+                }
+
                 const formData = new URLSearchParams({
                     version: version,
                     token: API_TOKEN,
@@ -11712,6 +11747,14 @@ ${addressOptions.length && isPlus && apiOk ? `
                     body: formData.toString()
                 })
                     .then(response => {
+                    if (response.status === 429) {
+                        const storedProductsData = getStoredQtyProductsData();
+                        if (storedProductsData) {
+                            qtyProductsData(storedProductsData);
+                            return storedProductsData;
+                        }
+                    }
+
                     if (response.status === 401) {
                         return response;
                     }
@@ -11729,6 +11772,19 @@ ${addressOptions.length && isPlus && apiOk ? `
                     });
                 })
                     .then(productsData => {
+                    if (!Array.isArray(productsData)) {
+                        return productsData;
+                    }
+
+                    const storedProductsData = getStoredQtyProductsData();
+                    const productsDataToDisplay = mergeQtyProductsDataWithMemory(productsData, storedProductsData);
+
+                    if (productsDataToDisplay) {
+                        GM_setValue(qtyProductsDataCacheKey, productsDataToDisplay);
+                        qtyProductsData(productsDataToDisplay);
+                        return productsDataToDisplay;
+                    }
+
                     //On a réussi à parser le JSON, on appelle qtyProductsData
                     qtyProductsData(productsData);
                     return productsData;
@@ -11736,6 +11792,13 @@ ${addressOptions.length && isPlus && apiOk ? `
                     .catch(error => {
                     //Erreur réseau ou de parsing déjà gérée ci-dessus
                     console.error("Erreur de requête:", error);
+
+                    const storedProductsData = getStoredQtyProductsData();
+                    if (storedProductsData) {
+                        qtyProductsData(storedProductsData);
+                        return storedProductsData;
+                    }
+
                     throw error;
                 });
             }
@@ -11810,6 +11873,41 @@ ${addressOptions.length && isPlus && apiOk ? `
 
             //Appel API pour commandes du jour
             function qtyOrders() {
+                const qtyOrdersDataCacheKey = 'qtyOrdersDataCache';
+
+                function getStoredQtyOrdersData() {
+                    const storedData = GM_getValue(qtyOrdersDataCacheKey, null);
+                    if (storedData && typeof storedData === 'object' && !Array.isArray(storedData)) {
+                        return storedData;
+                    }
+                    return null;
+                }
+
+                function hasValidQtyOrderValue(value) {
+                    return typeof value !== 'undefined' && value !== null && value !== 'undefined';
+                }
+
+                function mergeQtyOrdersDataWithMemory(currentData, storedData) {
+                    if (!currentData || typeof currentData !== 'object' || Array.isArray(currentData)) {
+                        return storedData;
+                    }
+
+                    const mergedData = {
+                        ...(storedData || {}),
+                        ...currentData
+                    };
+
+                    if (storedData && typeof storedData === 'object') {
+                        Object.keys(storedData).forEach((key) => {
+                            if (!hasValidQtyOrderValue(currentData[key])) {
+                                mergedData[key] = storedData[key];
+                            }
+                        });
+                    }
+
+                    return mergedData;
+                }
+
                 const formData = new URLSearchParams({
                     version: version,
                     token: API_TOKEN,
@@ -11823,6 +11921,14 @@ ${addressOptions.length && isPlus && apiOk ? `
                     body: formData.toString()
                 })
                     .then(response => {
+                    if (response.status === 429) {
+                        const storedOrdersData = getStoredQtyOrdersData();
+                        if (storedOrdersData) {
+                            qtyOrdersData(storedOrdersData);
+                            return storedOrdersData;
+                        }
+                    }
+
                     if (response.status === 401) {
                         return response;
                     }
@@ -11840,6 +11946,19 @@ ${addressOptions.length && isPlus && apiOk ? `
                     });
                 })
                     .then(ordersData => {
+                    if (!ordersData || typeof ordersData !== 'object' || Array.isArray(ordersData)) {
+                        return ordersData;
+                    }
+
+                    const storedOrdersData = getStoredQtyOrdersData();
+                    const ordersDataToDisplay = mergeQtyOrdersDataWithMemory(ordersData, storedOrdersData);
+
+                    if (ordersDataToDisplay) {
+                        GM_setValue(qtyOrdersDataCacheKey, ordersDataToDisplay);
+                        qtyOrdersData(ordersDataToDisplay);
+                        return ordersDataToDisplay;
+                    }
+
                     //On a réussi à parser le JSON, on appelle qtyOrdersData
                     qtyOrdersData(ordersData);
                     return ordersData;
@@ -11847,6 +11966,13 @@ ${addressOptions.length && isPlus && apiOk ? `
                     .catch(error => {
                     //Erreur réseau ou de parsing déjà gérée ci-dessus
                     console.error("Erreur de requête:", error);
+
+                    const storedOrdersData = getStoredQtyOrdersData();
+                    if (storedOrdersData) {
+                        qtyOrdersData(storedOrdersData);
+                        return storedOrdersData;
+                    }
+
                     throw error;
                 });
             }
