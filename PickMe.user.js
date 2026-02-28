@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PickMe
 // @namespace    http://tampermonkey.net/
-// @version      3.6.5
+// @version      3.7.0
 // @description  Plugin d'aide à la navigation pour les membres du discord Amazon Vine FR : https://discord.gg/amazonvinefr
 // @author       Créateur/Codeur principal : MegaMan / Codeur secondaire : Sulff, ChatGPT, Claude et Gemini / Testeurs : Louise, L'avocat du Diable et Popato (+ du code de lelouch_di_britannia, FMaz008 et Thorvarium)
 // @match        https://www.amazon.fr/vine/vine-items
@@ -16,7 +16,7 @@
 // @match        https://pickme.alwaysdata.net/*
 // @match        https://vinepick.me/*
 // @match        https://www.amazon.fr/vine/vine-items?search=*
-// @icon         https://vinepick.me/img/PM-ICO-2.png
+// @icon         https://vinepick.me/img/PM-icon.png
 // @updateURL    https://raw.githubusercontent.com/teitong/pickme/main/PickMe.user.js
 // @downloadURL  https://raw.githubusercontent.com/teitong/pickme/main/PickMe.user.js
 // @grant        GM_setValue
@@ -55,6 +55,178 @@ NOTES:
 
         const baseUrlPickme = "https://vinepick.me";
         const hostnamePickMe = new URL(baseUrlPickme).hostname;
+        const pickMeUpdateUrl = "https://raw.githubusercontent.com/teitong/pickme/main/PickMe.user.js";
+        const pickMeUpdateWikiUrl = "https://vinepick.me/wiki/doku.php?id=plugins:reviewremember:tuto_de_l_installation_de_reviewremember";
+        const pickMePatchnoteWikiUrl = "https://vinepick.me/wiki/doku.php?id=plugins:pickme:historique_des_versions";
+        const updateNotifyEnabled = GM_getValue('updateNotifyEnabled', true);
+        GM_setValue('updateNotifyEnabled', updateNotifyEnabled);
+
+        function comparerVersions(versionLocale, versionDistante) {
+            const locale = String(versionLocale || '').split('.').map(partie => parseInt(partie, 10) || 0);
+            const distante = String(versionDistante || '').split('.').map(partie => parseInt(partie, 10) || 0);
+            const longueurMax = Math.max(locale.length, distante.length);
+
+            for (let index = 0; index < longueurMax; index++) {
+                const valeurLocale = locale[index] || 0;
+                const valeurDistante = distante[index] || 0;
+
+                if (valeurLocale < valeurDistante) {
+                    return -1;
+                }
+                if (valeurLocale > valeurDistante) {
+                    return 1;
+                }
+            }
+
+            return 0;
+        }
+
+        function afficherAlerteMiseAJour(versionDistante) {
+            const idAlerte = 'pm-update-alert';
+            if (document.getElementById(idAlerte)) {
+                return;
+            }
+
+            const style = document.createElement('style');
+            style.textContent = `
+                #${idAlerte} {
+                    position: fixed;
+                    top: 12px;
+                    right: 12px;
+                    z-index: 2147483647;
+                    max-width: 420px;
+                    background: #fff8e8;
+                    border: 2px solid #f7b955;
+                    border-radius: 12px;
+                    padding: 12px;
+                    box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+                    color: #1f1f1f;
+                    font-size: 14px;
+                    line-height: 1.45;
+                }
+                #${idAlerte} a {
+                    color: #0459c4;
+                    text-decoration: underline;
+                    font-weight: 700;
+                }
+                #${idAlerte} button {
+                    margin-top: 8px;
+                    margin-right: 8px;
+                    border: 0;
+                    border-radius: 8px;
+                    padding: 6px 10px;
+                    cursor: pointer;
+                    background: #0463d5;
+                    color: #fff;
+                    font-weight: 700;
+                }
+                #${idAlerte} #pm-update-alert-ignore {
+                    background: #f44336;
+                }
+            `;
+            document.head.appendChild(style);
+
+            const alerte = document.createElement('div');
+            alerte.id = idAlerte;
+            alerte.innerHTML = `
+                <strong>Une mise à jour PickMe est disponible.</strong><br>
+                Version installée : <strong>${GM_info.script.version}</strong><br>
+                Dernière version : <strong>${versionDistante}</strong><br>
+                <a href="${pickMeUpdateWikiUrl}" target="_blank" rel="noopener noreferrer">Comment faire la mise à jour ?</a><br>
+                <a href="${pickMePatchnoteWikiUrl}" target="_blank" rel="noopener noreferrer">Voir le patch notes</a><br>
+                <button type="button" id="pm-update-alert-close">Fermer</button>
+                <button type="button" id="pm-update-alert-ignore">Ne plus afficher pour cette version</button>
+            `;
+
+            document.body.appendChild(alerte);
+            const boutonFermer = document.getElementById('pm-update-alert-close');
+            if (boutonFermer) {
+                boutonFermer.addEventListener('click', function () {
+                    alerte.remove();
+                });
+            }
+
+            const boutonIgnorer = document.getElementById('pm-update-alert-ignore');
+            if (boutonIgnorer) {
+                boutonIgnorer.addEventListener('click', function () {
+                    GM_setValue('pickMeUpdateIgnoredVersion', versionDistante);
+                    alerte.remove();
+                });
+            }
+        }
+
+        function afficherAlerteMiseAJourSiNecessaire() {
+            const versionEnAttente = GM_getValue('pickMeUpdatePendingVersion', '');
+            if (!versionEnAttente) {
+                return;
+            }
+
+            if (comparerVersions(GM_info.script.version, versionEnAttente) >= 0) {
+                GM_deleteValue('pickMeUpdatePendingVersion');
+                return;
+            }
+
+            const versionIgnoree = GM_getValue('pickMeUpdateIgnoredVersion', '');
+            if (versionIgnoree && comparerVersions(versionEnAttente, versionIgnoree) === 0) {
+                return;
+            }
+
+            afficherAlerteMiseAJour(versionEnAttente);
+        }
+
+        async function verifierMiseAJourPickMe() {
+            try {
+                const reponse = await fetch(`${pickMeUpdateUrl}?t=${Date.now()}`);
+                if (!reponse.ok) {
+                    return;
+                }
+
+                const contenu = await reponse.text();
+                const correspondanceVersion = contenu.match(/@version\s+([^\n\r]+)/);
+                if (!correspondanceVersion || !correspondanceVersion[1]) {
+                    return;
+                }
+
+                const versionDistante = correspondanceVersion[1].trim();
+                if (comparerVersions(GM_info.script.version, versionDistante) < 0) {
+                    GM_setValue('pickMeUpdatePendingVersion', versionDistante);
+                    afficherAlerteMiseAJourSiNecessaire();
+                } else {
+                    GM_deleteValue('pickMeUpdatePendingVersion');
+                }
+            } catch (error) {
+                console.log(error);
+                //Pas de blocage si la vérification de mise à jour échoue
+            }
+        }
+
+        function gererVerificationMiseAJourPickMe() {
+            if (!updateNotifyEnabled) {
+                return;
+            }
+
+            afficherAlerteMiseAJourSiNecessaire();
+
+            const compteurVerification = Number(GM_getValue('pickMeUpdateCheckCounter', 0)) || 0;
+            const prochainCompteur = compteurVerification + 1;
+            const doitVerifier = prochainCompteur >= 10;
+
+            GM_setValue('pickMeUpdateCheckCounter', doitVerifier ? 0 : prochainCompteur);
+
+            if (doitVerifier) {
+                verifierMiseAJourPickMe();
+            }
+        }
+
+        //Fix iPhone
+        if (document.readyState !== 'loading') {
+            gererVerificationMiseAJourPickMe();
+        }
+        else {
+            document.addEventListener('DOMContentLoaded', function () {
+                gererVerificationMiseAJourPickMe();
+            });
+        }
 
         let defautTab = GM_getValue('defautTab', 'AFA');
         let checkoutRedirect = GM_getValue('checkoutRedirect', true);
@@ -957,6 +1129,31 @@ NOTES:
         function findButtonPlacement() {
             const candidates = [
                 {
+                    selector: '#addToCart_feature_div',
+                    getPlacement: element => ({ type: 'before', node: element })
+                },
+                {
+                    selector: '#addToCart-button',
+                    getPlacement: element => {
+                        const targetSection = element.closest('.a-button-stack') || element.closest('.a-section') || element;
+                        return { type: 'before', node: targetSection };
+                    }
+                },
+                {
+                    selector: '#bazaar-buybox-atc-button',
+                    getPlacement: element => {
+                        const targetSection = element.closest('.a-button-stack') || element.closest('.a-section') || element;
+                        return { type: 'before', node: targetSection };
+                    }
+                },
+                {
+                    selector: '#add-to-cart-button',
+                    getPlacement: element => {
+                        const targetSection = element.closest('.a-button-stack') || element.closest('.a-section') || element;
+                        return { type: 'before', node: targetSection };
+                    }
+                },
+                {
                     selector: '#corePriceDisplay_desktop_feature_div',
                     getPlacement: element => {
                         const targetSection = element.querySelector('.a-section.a-spacing-none') || element;
@@ -1073,6 +1270,56 @@ NOTES:
             insertButtonContainer(buttonContainer, placement);
         }
 
+        function addButtonsInOfferList(asin) {
+            const offerColumns = document.querySelectorAll('.aod-atc-column');
+            if (!offerColumns.length) {
+                return;
+            }
+
+            offerColumns.forEach(offerColumn => {
+                if (offerColumn.querySelector('.pickme-offer-button')) {
+                    return;
+                }
+
+                const addToCartButton = offerColumn.querySelector('.aod-atc-generic-btn-desktop');
+                const addToCartWidth = addToCartButton?.getBoundingClientRect().width;
+                const addToCartHeight = addToCartButton?.getBoundingClientRect().height;
+
+                const offerButton = document.createElement('a');
+                offerButton.className = 'a-button a-button-primary pickme-offer-button';
+                offerButton.href = baseUrlPickme + `/monsieurconso/product.php?asin=${asin}`;
+                offerButton.target = '_blank';
+                offerButton.style.display = 'flex';
+                offerButton.style.alignItems = 'center';
+                offerButton.style.justifyContent = 'center';
+                offerButton.style.width = addToCartWidth ? `${addToCartWidth}px` : '100%';
+                offerButton.style.height = addToCartHeight ? `${addToCartHeight}px` : '34px';
+                offerButton.style.marginTop = '6px';
+                offerButton.style.backgroundColor = '#CC0033';
+                offerButton.style.border = '1px solid #CC0033';
+                offerButton.style.boxSizing = 'border-box';
+                offerButton.style.textDecoration = 'none';
+
+                const offerButtonText = document.createElement('span');
+                offerButtonText.className = 'a-button-text';
+                offerButtonText.style.color = 'white';
+                offerButtonText.style.fontWeight = 'bold';
+                offerButtonText.style.fontSize = '11px';
+                offerButtonText.style.lineHeight = '1';
+                offerButtonText.textContent = isAffiliateTagPresent() ? 'Lien PickMe actif' : 'Acheter via PickMe';
+
+                if (isAffiliateTagPresent()) {
+                    offerButton.style.backgroundColor = 'green';
+                    offerButton.style.border = '1px solid green';
+                    offerButton.style.pointerEvents = 'none';
+                    offerButton.style.cursor = 'default';
+                }
+
+                offerButton.appendChild(offerButtonText);
+                offerColumn.appendChild(offerButton);
+            });
+        }
+
         function submitPost(asin) {
             var form = document.createElement('form');
             form.method = 'POST';
@@ -1093,24 +1340,28 @@ NOTES:
         function createButton(asin) {
             var container = document.createElement('div'); //Créer un conteneur pour le bouton et le texte d'explication
             container.id = 'pickme-button-container';
-            container.style.display = 'inline-flex';
-            container.style.alignItems = 'center';
+            container.style.display = 'block';
+            container.style.width = '100%';
+            container.style.textAlign = 'center';
 
             var affiliateButton = document.createElement('a');
-            affiliateButton.className = 'a-button a-button-primary a-button-small';
+            affiliateButton.className = 'a-button a-button-primary a-button-span12';
             affiliateButton.id = 'pickme-button';
             affiliateButton.style.marginTop = '5px'; //Pour ajouter un peu d'espace au-dessus du bouton
-            affiliateButton.style.marginBottom = '5px';
+            affiliateButton.style.marginBottom = '2px';
             affiliateButton.style.color = 'white'; //Changez la couleur du texte en noir
-            //affiliateButton.style.maxWidth = '200px';
-            affiliateButton.style.height = '29px';
-            affiliateButton.style.lineHeight = '29px';
-            affiliateButton.style.borderRadius = '20px';
             affiliateButton.style.whiteSpace = 'nowrap';
-            affiliateButton.style.padding = '0 40px';
             affiliateButton.style.backgroundColor = '#CC0033';
             affiliateButton.style.border = '1px solid white';
-            affiliateButton.style.display = 'inline-block';
+            affiliateButton.style.display = 'flex';
+            affiliateButton.style.alignItems = 'center';
+            affiliateButton.style.justifyContent = 'center';
+            affiliateButton.style.width = '100%';
+            affiliateButton.style.minHeight = '38px';
+            affiliateButton.style.padding = '0 12px';
+            affiliateButton.style.boxSizing = 'border-box';
+            affiliateButton.style.textAlign = 'center';
+            affiliateButton.style.fontWeight = 'bold';
 
             if (isAffiliateTagPresent()) {
                 affiliateButton.innerText = 'Lien PickMe actif';
@@ -1118,6 +1369,7 @@ NOTES:
                 affiliateButton.style.color = 'white';
                 affiliateButton.style.pointerEvents = 'none'; //Empêchez tout événement de clic
                 affiliateButton.style.cursor = 'default';
+                affiliateButton.style.marginBottom = '8px';
                 affiliateButton.style.border = '1px solid black';
                 container.appendChild(affiliateButton); //Ajouter le bouton et le texte d'explication au conteneur
             } else {
@@ -1129,7 +1381,11 @@ NOTES:
                 affiliateButton.target = '_blank';
                 var infoText = document.createElement('span'); //Créer l'élément de texte d'explication
                 infoText.innerHTML = '<b>A quoi sert ce bouton ?</b>';
-                infoText.style.marginLeft = '5px';
+                infoText.style.marginTop = '2px';
+                infoText.style.marginBottom = '4px';
+                infoText.style.display = 'block';
+                infoText.style.width = '100%';
+                infoText.style.textAlign = 'center';
                 infoText.style.color = '#CC0033';
                 infoText.style.cursor = 'pointer';
                 infoText.style.fontSize = '14px';
@@ -1140,6 +1396,8 @@ NOTES:
                 container.appendChild(infoText);
             }
             affiliateButton.style.fontSize = '14px';
+            //Pour Amazon HAUL ajuster la hauteur de l'élément en mode mobile pour voir les boutons
+            document.querySelector('#haul-buybox-wrapper')?.style.setProperty('height', 'auto', 'important');
             return container; //Retourner le conteneur au lieu du bouton seul
         }
 
@@ -1150,11 +1408,13 @@ NOTES:
             if (asinProduct) {
                 pageProduit = true;
                 addButton(asinProduct);
+                addButtonsInOfferList(asinProduct);
                 const observer = new MutationObserver(mutations => {
                     mutations.forEach(mutation => {
                         if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
                             asinProduct = getASINfromURL(window.location.href);
                             addButton(asinProduct);
+                            addButtonsInOfferList(asinProduct);
                         }
                     });
                 });
@@ -1266,8 +1526,18 @@ NOTES:
             return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
         }
 
+        function isReviewScanInProgressOnCurrentPage() {
+            if (!window.location.href.includes('vine-reviews')) {
+                return false;
+            }
+            return !!localStorage.getItem('rr-vine-scan-state');
+        }
+
         //Récupérer les infos d'un produit dans l'API
         function infoProduct(asin) {
+            if (isReviewScanInProgressOnCurrentPage()) {
+                return Promise.resolve(null);
+            }
             const formData = new URLSearchParams({
                 version: GM_info.script.version,
                 token: apiKey,
@@ -1308,6 +1578,9 @@ NOTES:
         function infoProducts(asins) {
             const cleanedAsins = [...new Set((asins || []).filter(Boolean))];
             if (cleanedAsins.length === 0) {
+                return Promise.resolve({});
+            }
+            if (isReviewScanInProgressOnCurrentPage()) {
                 return Promise.resolve({});
             }
 
@@ -1800,7 +2073,7 @@ NOTES:
         box-shadow: 0px 0px 10px #ccc;
     `;
             popup.innerHTML = `
-        <h2 id="configPopupHeader" style="cursor: grab;">Bloc-notes<span id="closeNotePopup" style="float: right; cursor: pointer;">✖</span></h2>
+        <h2 id="configPopupHeader" style="cursor: grab;">Bloc-notes<span id="closeNotePopup" class="pm-popup-close" style="float: right; cursor: pointer;">&times;</span></h2>
         <textarea id="noteTextArea" style="width: 100%; height: 300px;"></textarea>
         <div class="button-container final-buttons">
             <button class="full-width" id="saveNote">Enregistrer</button>
@@ -1878,6 +2151,17 @@ NOTES:
         //Pour savoir si on a la version mobile du site ou non
         function isMobile() {
             return document.documentElement.classList.contains('a-mobile');
+        }
+
+        function removeMobileAppBanner() {
+            if (!isMobile()) {
+                return;
+            }
+
+            const appBanner = document.getElementById('nav-app-banner-container');
+            if (appBanner) {
+                appBanner.remove();
+            }
         }
 
         function ensureMobileTabsContainer() {
@@ -2294,49 +2578,6 @@ NOTES:
             localStorage.setItem(key, '0'); //Définir la valeur à '0'
         }*/
 
-            //Convertir le stockage des cachés et favoris suite à la 1.12
-            let convertLS = GM_getValue("convertLS", true);
-            if (convertLS) {
-                //Récupérer toutes les clés à traiter
-                const keysToProcess = [];
-                for (let i = 0; i < localStorage.length; i++) {
-                    const key = localStorage.key(i);
-                    if (key.endsWith('_favori') || key.endsWith('_cache')) {
-                        keysToProcess.push(key);
-                    }
-                }
-
-                //Traiter chaque clé
-                keysToProcess.forEach((key) => {
-                    const value = localStorage.getItem(key);
-                    let newKey;
-                    let newValue;
-
-                    if (key.endsWith('_favori')) {
-                        const data = JSON.parse(value);
-                        if (data) {
-                            const estFavori = data.estFavori;
-                            newKey = key.replace('_favori', '_f');
-                            newValue = estFavori ? '1' : '0';
-                        }
-
-                    } else if (key.endsWith('_cache')) {
-                        const data = JSON.parse(value);
-                        if (data) {
-                            const estCache = data.estCache;
-                            newKey = key.replace('_cache', '_c');
-                            newValue = estCache ? '0' : '1';
-                        }
-                    }
-
-                    //Enregistre la nouvelle clé et valeur
-                    localStorage.setItem(newKey, newValue);
-                    //Supprime l'ancienne clé
-                    localStorage.removeItem(key);
-                });
-                GM_setValue("convertLS", false);
-            }
-
             var version = GM_info.script.version;
 
             (GM_getValue("config")) ? GM_getValue("config") : GM_setValue("config", {});
@@ -2432,7 +2673,7 @@ NOTES:
 
             //Options avancées
             let onlyETV = GM_getValue('onlyETV', false);
-            let logoPM = GM_getValue('logoPM', baseUrlPickme + '/img/PM.png');
+            let logoPM = GM_getValue('logoPM', baseUrlPickme + '/img/NewPM.png');
 
             let favSize = GM_getValue('favSize', '23px');
             let favSizeMobile = GM_getValue('favSizeMobile', '15.8px');
@@ -2759,6 +3000,9 @@ NOTES:
                 copyShare = "Partager";
             }
 
+            //Supprimer le bandeau supérieur Amazon sur mobile
+            removeMobileAppBanner();
+
             //On remplace le lien de l'onglet pour que tout se charge correctement
             var lien = document.querySelector('#vvp-vine-items-tab a');
             if (lien) {
@@ -3028,7 +3272,7 @@ NOTES:
                 popup.innerHTML = `
         <h2 id="configPopupHeader" style="margin-top: 0;">
             Couleurs de surbrillance
-            <span id="closeColorPicker" style="float: right; cursor: pointer;">&times;</span>
+            <span id="closeColorPicker" class="pm-popup-close" style="float: right; cursor: pointer;">&times;</span>
         </h2>
         <div style="margin-bottom: 15px;">
             <label for="colorPickerNew" style="display: block;">Nouveau produit :</label>
@@ -3134,7 +3378,7 @@ NOTES:
         box-shadow: 0px 0px 10px #ccc;
     `;
                 popup.innerHTML = `
-          <h2 id="configPopupHeader">Couleur de surbrillance des produits filtrés<span id="closeColorPicker" style="float: right; cursor: pointer;">&times;</span></h2>
+          <h2 id="configPopupHeader">Couleur de surbrillance des produits filtrés<span id="closeColorPicker" class="pm-popup-close" style="float: right; cursor: pointer;">&times;</span></h2>
         <input type="color" id="colorPicker" value="${hexColor}" style="width: 100%;">
         <div class="pm-preview-card" data-type="fav">
             <div class="pm-preview-overlay"></div>
@@ -6805,19 +7049,20 @@ li.a-last a span.larr {      /* Cible le span larr dans les li a-last */
   left: 50%;
   transform: translate(-50%, -50%);
   z-index: 10000;
-  background-color: white;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
   padding: 20px;
-  border-radius: 8px;
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  border-radius: 14px;
+  box-shadow: 0 18px 40px rgba(4, 56, 105, 0.18);
   width: 500px; /* Ajusté pour mieux s'adapter aux deux colonnes de checkbox */
   display: flex;
   flex-direction: column;
   align-items: stretch;
   cursor: auto;
-  border: 2px solid #ccc; /* Ajout d'un contour */
+  border: 1px solid #d6e4f2; /* Ajout d'un contour */
   overflow: auto; /* Ajout de défilement si nécessaire */
   resize: both; /* Permet le redimensionnement horizontal et vertical */
   max-height: 95vh;
+  min-height: 260px;
 }
 
 body.modal-open {
@@ -6834,14 +7079,21 @@ body.modal-open {
 }
 
 #configPopup h2, #configPopup label, #keyConfigPopup h2, #colorPickerPopup h2, #notifConfigPopup h2, #advancedConfigPopup h2 {
-  color: #333;
-  margin-bottom: 20px;
+  color: #223142;
+  margin-bottom: 14px;
 }
 
 #configPopup h2 {
   cursor: grab;
   font-size: 1.5em;
   text-align: center;
+  position: sticky;
+  top: -20px;
+  z-index: 2;
+  background: linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,251,255,0.98) 100%);
+  padding: 14px 10px 12px;
+  margin: -20px -20px 14px;
+  border-bottom: 1px solid #dfe9f5;
 }
 
 #keyConfigPopup h2, #favConfigPopup h2, #colorPickerPopup h2, #notifConfigPopup h2, #notePopup h2, #advancedConfigPopup h2 {
@@ -6849,13 +7101,44 @@ body.modal-open {
   text-align: center;
 }
 
+#closePopup, #closePopupRR, .pm-popup-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: 1px solid #d0dbe8;
+  background-color: #ffffff;
+  color: #4f5e6d;
+  transition: all 0.2s ease;
+}
+
+#closePopup:hover, #closePopupRR:hover, .pm-popup-close:hover {
+  background-color: #f4f8fc;
+  color: #223142;
+  border-color: #b9cade;
+}
+
 #configPopup label, #keyConfigPopup label, #favConfigPopup label, #notifConfigPopup label, #notePopup label, #advancedConfigPopup label {
   display: flex;
   align-items: center;
+  gap: 8px;
+  background: #ffffff;
+  border: 1px solid #e5edf6;
+  border-radius: 10px;
+  padding: 8px 10px;
+  box-shadow: 0 1px 2px rgba(6, 44, 78, 0.05);
 }
 
 #configPopup label input[type="checkbox"], #notifConfigPopup label input[type="checkbox"] {
   margin-right: 10px;
+}
+
+#advancedConfigPopup input[type="checkbox"] {
+  margin-top: 0 !important;
+  align-self: center;
+  flex-shrink: 0;
 }
 
 #configPopup .button-container,
@@ -6876,12 +7159,13 @@ body.modal-open {
 }
 
 #configPopup button, #keyConfigPopup button, #favConfigPopup button, #notifConfigPopup button, #notePopup button, #advancedConfigPopup button {
-  padding: 5px 10px;
-  background-color: #f3f3f3;
-  border: 1px solid #ddd;
-  border-radius: 4px;
+  padding: 8px 10px;
+  background-color: #f8fbff;
+  border: 1px solid #dce9f7;
+  border-radius: 10px;
   cursor: pointer;
   text-align: center;
+  font-weight: 600;
 }
 
 #configPopup button:not(.full-width), #keyConfigPopup button:not(.full-width), #favConfigPopup button:not(.full-width), #colorPickerPopup button:not(.full-width), #notifConfigPopup button:not(.full-width), #notePopup button:not(.full-width), #advancedConfigPopup button:not(.full-width) {
@@ -6896,14 +7180,15 @@ body.modal-open {
 }
 
 #configPopup button:hover {
-  background-color: #e8e8e8;
+  background-color: #eef5fd;
 }
 
 #configPopup button:active {
   background-color: #ddd;
 }
 #configPopup label.disabled {
-  color: #ccc;
+  color: #99a7b5;
+  background: #f7f9fc;
 }
 
 #configPopup label.disabled input[type="checkbox"] {
@@ -7287,10 +7572,10 @@ select.btn-like {
 
                 popup.innerHTML = `
     <h2 id="configPopupHeader">
-  <span style="color: #0463d5;">Paramètres</span>
-  <span style="color: #f9a13b;">PickMe</span>
-  <span style="color: #0463d5;">v${version}</span>
-  <span id="closePopup" style="float: right; cursor: pointer;">&times;</span>
+  <span>Paramètres</span>
+  <span style="color: #0463d5;">Pick</span><span style="color: #f9a13b;">Me</span>
+  <span>v${version}</span>
+  <span id="closePopup" class="pm-popup-close" style="float: right; cursor: pointer;">&times;</span>
 </h2>
     <div style="text-align: center; margin-bottom: 20px;">
         <p id="links-container" style="text-align: center;">
@@ -7725,7 +8010,7 @@ ${addressOptions.length && isPlus && apiOk ? `
                 //Exemple bouton qui prend toute la ligne : <button style="flex-basis: 100%;" id="createConfigPopupRR">Paramètres ReviewRemember</button>
                 return `
 <div class="button-container action-buttons">
-  <button style="flex-basis: 100%;" id="createConfigPopupRR">Paramètres ReviewRemember</button>
+  <button style="flex-basis: 100%; background-color: #1d820c !important; color: #ffffff !important; font-weight: bold; border: 1px solid #166609 !important; box-shadow: 0 0 0 1px rgba(255,255,255,0.25) inset !important;" id="createConfigPopupRR">Paramètres ReviewRemember</button>
   <button id="configurerAdvanced">Paramètres avancés</button>
   <button id="configurerFiltres">Configurer les mots-clés pour le filtre</button>
   <button id="setHighlightColor">Couleur de surbrillance des repop/nouveaux produits</button>
@@ -7781,7 +8066,7 @@ ${addressOptions.length && isPlus && apiOk ? `
         width: 350px;
     `;
                 popup.innerHTML = `
-        <h2 id="configPopupHeader">Configuration des touches<span id="closeKeyPopup" style="float: right; cursor: pointer;">&times;</span></h2>
+        <h2 id="configPopupHeader">Configuration des touches<span id="closeKeyPopup" class="pm-popup-close" style="float: right; cursor: pointer;">&times;</span></h2>
         ${createKeyInput('keyLeft', 'Navigation à gauche (flêche : ArrowLeft)')}
         ${createKeyInput('keyRight', 'Navigation à droite (flêche : ArrowRight)')}
         ${createKeyInput('keyUp', 'Onglet suivant (flêche : ArrowUp)')}
@@ -7847,7 +8132,7 @@ ${addressOptions.length && isPlus && apiOk ? `
         width: 500px;
     `;
                 popup.innerHTML = `
-    <h2>Configurer les notifications<span id="closeNotifPopup" style="float: right; cursor: pointer;">&times;</span></h2>
+    <h2>Configurer les notifications<span id="closeNotifPopup" class="pm-popup-close" style="float: right; cursor: pointer;">&times;</span></h2>
     <div class="checkbox-container">
     <u class="full-width"><b>Options :</u></b><br>
     ${createCheckbox('notifFav', 'Filtrer "Autres articles"/"Tous les articles"', 'Utilise les filtres (soit celui des favoris, soit celui pour exclure) pour ne remonter que les notifications favoris ou sans mots exclus et uniquement si c\'est un produit "Autres articles" ou "Tous les articles" (aucun filtre sur "Disponible pour tous"). La notification apparaitra tout de même dans le centre de notifications. Prend en compte le filtre, même si l\'option des filtres est désactivée')}
@@ -7903,6 +8188,96 @@ ${addressOptions.length && isPlus && apiOk ? `
                 document.getElementById('notifConfigPopup').remove(); //Ferme la popup après enregistrement
             }
 
+            function parseKeywordsList(value) {
+                return value
+                    .split(',')
+                    .map(word => word.trim())
+                    .filter(word => word !== '');
+            }
+
+            function formatKeywordsList(value) {
+                return parseKeywordsList(value).join(',');
+            }
+
+            function renderKeywordsEditor(containerId, inputId) {
+                const container = document.getElementById(containerId);
+                const input = document.getElementById(inputId);
+                if (!container || !input) {
+                    return;
+                }
+
+                const mots = parseKeywordsList(input.value);
+                container.innerHTML = '';
+
+                if (mots.length === 0) {
+                    const emptyState = document.createElement('p');
+                    emptyState.style.cssText = 'margin: 0; font-size: 0.9em; color: #666;';
+                    emptyState.textContent = 'Aucun mot-clé ajouté.';
+                    container.appendChild(emptyState);
+                    return;
+                }
+
+                mots.forEach((mot, index) => {
+                    const row = document.createElement('div');
+                    row.style.cssText = 'display: flex; gap: 8px; margin-bottom: 8px;';
+
+                    const textInput = document.createElement('input');
+                    textInput.type = 'text';
+                    textInput.value = mot;
+                    textInput.style.cssText = 'flex: 1;';
+                    textInput.addEventListener('change', () => {
+                        const cleanedWords = parseKeywordsList(input.value);
+                        cleanedWords[index] = textInput.value.trim();
+                        input.value = cleanedWords.filter(word => word !== '').join(',');
+                        renderKeywordsEditor(containerId, inputId);
+                    });
+
+                    const removeButton = document.createElement('button');
+                    removeButton.type = 'button';
+                    removeButton.textContent = 'Supprimer';
+                    removeButton.addEventListener('click', () => {
+                        const cleanedWords = parseKeywordsList(input.value);
+                        cleanedWords.splice(index, 1);
+                        input.value = cleanedWords.join(',');
+                        renderKeywordsEditor(containerId, inputId);
+                    });
+
+                    row.appendChild(textInput);
+                    row.appendChild(removeButton);
+                    container.appendChild(row);
+                });
+            }
+
+            function addKeywordToEditor(inputId, containerId, valueId) {
+                const input = document.getElementById(inputId);
+                const valueInput = document.getElementById(valueId);
+                if (!input || !valueInput) {
+                    return;
+                }
+
+                const newWord = valueInput.value.trim();
+                if (!newWord) {
+                    return;
+                }
+
+                const keywords = parseKeywordsList(input.value);
+                keywords.push(newWord);
+                input.value = keywords.join(',');
+                valueInput.value = '';
+                renderKeywordsEditor(containerId, inputId);
+            }
+
+            function toggleKeywordsMode(useLegacyMode) {
+                const legacySections = document.querySelectorAll('.pm-legacy-keywords-mode');
+                const modernSections = document.querySelectorAll('.pm-modern-keywords-mode');
+                legacySections.forEach(section => {
+                    section.style.display = useLegacyMode ? 'block' : 'none';
+                });
+                modernSections.forEach(section => {
+                    section.style.display = useLegacyMode ? 'none' : 'block';
+                });
+            }
+
             //Fonction pour créer la fenêtre popup de configuration des filtres
             async function createFavConfigPopup() {
                 //Vérifie si une popup existe déjà et la supprime si c'est le cas
@@ -7920,18 +8295,39 @@ ${addressOptions.length && isPlus && apiOk ? `
         z-index: 10002;
         width: 600px;
     `;
+                const useLegacyKeywordsMode = GM_getValue('useLegacyKeywordsMode', false);
                 popup.innerHTML = `
-        <h2 id="configPopupHeader">Configuration des mots-clés<span id="closeFavPopup" style="float: right; cursor: pointer;">&times;</span></h2>
+        <h2 id="configPopupHeader">Configuration des mots-clés<span id="closeFavPopup" class="pm-popup-close" style="float: right; cursor: pointer;">&times;</span></h2>
+        <div style="margin-bottom: 10px;">
+            <label style="display: flex; align-items: center; gap: 8px;">
+                <input type="checkbox" id="useLegacyKeywordsMode" ${useLegacyKeywordsMode ? 'checked' : ''}>
+                Utiliser l'ancien mode (saisie avec des virgules)
+            </label>
+        </div>
         <div>
             <label for="favWords">Produits à mettre en avant :</label>
-            <textarea id="favWords" name="favWords" style="width: 100%; height: 110px;">${GM_getValue('favWords', '')}</textarea>
+            <textarea class="pm-legacy-keywords-mode" id="favWords" name="favWords" style="width: 100%; height: 110px;">${GM_getValue('favWords', '')}</textarea>
+            <div class="pm-modern-keywords-mode">
+                <div id="favWordsList" style="margin-top: 8px;"></div>
+                <div style="display: flex; gap: 8px; margin-top: 8px;">
+                    <input type="text" id="favWordsNew" placeholder="Ajouter un mot-clé" style="flex: 1;">
+                    <button type="button" id="addFavWord">Ajouter</button>
+                </div>
+            </div>
         </div>
         <button class="full-width" id="syncFavConfig" ${isRole ? '' : 'disabled'}>(Synchroniser) Envoyer la liste vers discord</button>
         <div style="margin-top: 10px;">
             <label for="hideWords">Produits à cacher/exclure :</label>
-            <textarea id="hideWords" name="hideWords" style="width: 100%; height: 110px">${GM_getValue('hideWords', '')}</textarea>
+            <textarea class="pm-legacy-keywords-mode" id="hideWords" name="hideWords" style="width: 100%; height: 110px">${GM_getValue('hideWords', '')}</textarea>
+            <div class="pm-modern-keywords-mode">
+                <div id="hideWordsList" style="margin-top: 8px;"></div>
+                <div style="display: flex; gap: 8px; margin-top: 8px;">
+                    <input type="text" id="hideWordsNew" placeholder="Ajouter un mot-clé" style="flex: 1;">
+                    <button type="button" id="addHideWord">Ajouter</button>
+                </div>
+            </div>
         </div><br>
-<p style="font-size: 0.9em; color: #666;">Note&nbsp;: chaque recherche différente doit être séparée par une virgule. Les majuscules ne sont pas prises en compte. Exemple&nbsp;: coque iphone, chat, HUB.<br>Si un produit est à la fois favori et exclu, il ne sera pas exclu (caché).</p>
+<p style="font-size: 0.9em; color: #666;">Note&nbsp;: les majuscules ne sont pas prises en compte. Si un produit est à la fois favori et exclu, il ne sera pas exclu (caché).</p>
         <div class="button-container final-buttons">
           <button class="full-width" id="saveFavConfig">Enregistrer</button>
           <button class="full-width" id="closeFavConfig">Fermer</button>
@@ -7944,30 +8340,38 @@ ${addressOptions.length && isPlus && apiOk ? `
                 //Ajout des écouteurs d'événements pour les boutons
                 document.getElementById('syncFavConfig').addEventListener('click', syncFavConfig);
                 document.getElementById('saveFavConfig').addEventListener('click', saveFavConfig);
+                document.getElementById('addFavWord').addEventListener('click', () => addKeywordToEditor('favWords', 'favWordsList', 'favWordsNew'));
+                document.getElementById('addHideWord').addEventListener('click', () => addKeywordToEditor('hideWords', 'hideWordsList', 'hideWordsNew'));
+                document.getElementById('favWordsNew').addEventListener('keydown', (event) => {
+                    if (event.key === 'Enter') {
+                        event.preventDefault();
+                        addKeywordToEditor('favWords', 'favWordsList', 'favWordsNew');
+                    }
+                });
+                document.getElementById('hideWordsNew').addEventListener('keydown', (event) => {
+                    if (event.key === 'Enter') {
+                        event.preventDefault();
+                        addKeywordToEditor('hideWords', 'hideWordsList', 'hideWordsNew');
+                    }
+                });
+                document.getElementById('useLegacyKeywordsMode').addEventListener('change', function() {
+                    GM_setValue('useLegacyKeywordsMode', this.checked);
+                    toggleKeywordsMode(this.checked);
+                });
                 document.getElementById('closeFavConfig').addEventListener('click', () => document.getElementById('favConfigPopup').remove());
                 document.getElementById('closeFavPopup').addEventListener('click', () => {
                     document.getElementById('favConfigPopup').remove();
                 });
+
+                renderKeywordsEditor('favWordsList', 'favWords');
+                renderKeywordsEditor('hideWordsList', 'hideWords');
+                toggleKeywordsMode(useLegacyKeywordsMode);
             }
 
 
             function saveFavConfig() {
-                let favWords = document.getElementById('favWords').value;
-                let hideWords = document.getElementById('hideWords').value;
-
-                //Nettoyage des espaces autour des virgules
-                favWords = favWords.replace(/\s*,\s*/g, ',').trim();
-                hideWords = hideWords.replace(/\s*,\s*/g, ',').trim();
-
-                //Suppression des virgules au début et à la fin
-                favWords = favWords.replace(/^,+|,+$/g, '');
-                hideWords = hideWords.replace(/^,+|,+$/g, '');
-
-                //Sécurité contre les doubles virgules
-                if (favWords.includes(',,') || hideWords.includes(',,')) {
-                    alert('Les doubles virgules ne sont pas autorisées dans la liste de mots-clés.');
-                    return;
-                }
+                let favWords = formatKeywordsList(document.getElementById('favWords').value);
+                let hideWords = formatKeywordsList(document.getElementById('hideWords').value);
 
                 document.getElementById('favWords').value = favWords;
                 document.getElementById('hideWords').value = hideWords;
@@ -8273,6 +8677,7 @@ ${addressOptions.length && isPlus && apiOk ? `
                 header.textContent = 'Paramètres avancés';
                 const closeSpan = document.createElement('span');
                 closeSpan.id = 'closeAdvancedPopup';
+                closeSpan.className = 'pm-popup-close';
                 closeSpan.style.cssText = 'float: right; cursor: pointer;';
                 closeSpan.innerHTML = '&times;';
                 header.appendChild(closeSpan);
@@ -8830,7 +9235,7 @@ ${addressOptions.length && isPlus && apiOk ? `
                 optionsContainer.appendChild(presetDropdownDiv);
                 getThemes();
 
-                ajouterOptionTexte('logoPM', 'URL du logo', baseUrlPickme + "/img/PM.png");
+                ajouterOptionTexte('logoPM', 'URL du logo', baseUrlPickme + "/img/NewPM.png");
 
                 ajouterSousTitre('Favori/Cacher');
                 ajouterOptionCheckbox('hideBas', 'Ajouter des boutons en bas de page pour rendre visibles ou cacher les produits (en plus de ceux en haut de page)');
@@ -8991,6 +9396,7 @@ ${addressOptions.length && isPlus && apiOk ? `
                 ajouterOptionCheckbox('zoomEnabled', 'Afficher l\'image du produit en plus grand si on clique dessus');
                 ajouterOptionCheckbox('notepadEnabled', 'Activer le Bloc-notes');
                 ajouterOptionCheckbox('wheelfixManualEnabled', 'Activer la correction universelle du chargement infini des produits');
+                ajouterOptionCheckbox('updateNotifyEnabled', 'Être prévenu des mises à jour de PickMe');
                 ajouterOptionTexte('sizeMobileCat', 'Tailles des boutons de catégories (RFY, AFA, AI) en affichage mobile', '32px');
                 ajouterSeparateur();
                 ajouterOptionCheckbox('notifVolumeEnabled', 'Contrôler le volume des notifications');
@@ -9258,14 +9664,8 @@ ${addressOptions.length && isPlus && apiOk ? `
 
             function syncFavConfig() {
                 if (confirm('Cela remplacera votre liste de mots-clés sur discord par celle de PickMe, êtes-vous sûr ?')) {
-                    let favWords = document.getElementById('favWords').value;
-                    favWords = favWords.replace(/\s*,\s*/g, ',').trim();
-                    favWords = favWords.replace(/^,+|,+$/g, '');
-                    if (favWords.includes(',,')) {
-                        const syncButton = document.getElementById('syncFavConfig');
-                        syncButton.innerHTML = 'Les doubles virgules ne sont pas autorisées.';
-                        return;
-                    }
+                    let favWords = formatKeywordsList(document.getElementById('favWords').value);
+                    document.getElementById('favWords').value = favWords;
                     const formData = new URLSearchParams({
                         version: version,
                         token: API_TOKEN,
@@ -9292,9 +9692,11 @@ ${addressOptions.length && isPlus && apiOk ? `
                                 return {status: response.status, responseText: text};
                             });
                         } else if (response.status === 400) {
-                            const syncButton = document.getElementById('syncFavConfig');
-                            syncButton.innerHTML = 'Les mot-clés doivent contenir au moins 3 caractères pour être synchronisés.';
-                            return "Non autorisé";
+                            return response.text().then(text => {
+                                const syncButton = document.getElementById('syncFavConfig');
+                                syncButton.innerHTML = text;
+                                return "Non autorisé";
+                            });
                         } else if (response.status === 201) {
                             const syncButton = document.getElementById('syncFavConfig');
                             syncButton.innerHTML = 'Non autorisé';
@@ -11100,6 +11502,9 @@ ${addressOptions.length && isPlus && apiOk ? `
                 if (tab === "fav") {
                     apiURL = baseUrlPickme + "/shyrka/asinsinfofav";
                 }
+                if (tab === "reviews" && isReviewScanInProgressOnCurrentPage()) {
+                    return Promise.resolve([]);
+                }
                 if (Array.isArray(data) && data.length > 0) {
                     const formData = new URLSearchParams({
                         version: version,
@@ -11458,7 +11863,7 @@ ${addressOptions.length && isPlus && apiOk ? `
                         const asinElement = item.querySelector('.vvp-' + tab + '-table--text-col');
                         asinToLoad = asinElement && asinElement.childNodes.length > 0 && asinElement.childNodes[0].nodeValue
                             ? asinElement.childNodes[0].nodeValue.trim()
-                            : null;
+                        : null;
                     }
 
                     if (asinToLoad && !pendingAsinsSet.has(asinToLoad)) {
@@ -15721,14 +16126,14 @@ ${addressOptions.length && isPlus && apiOk ? `
                 let csvContent = "\uFEFF"; // BOM pour UTF-8
 
                 //Ajouter l'en-tête du CSV
-                csvContent += "Date;Type;Nom;ASIN;Evaluation;Titre de l'avis;Contenu de l'avis\n";
+                csvContent += "Date;Type;Nom;ASIN;Votes utiles;Evaluation;Titre de l'avis;Contenu de l'avis\n";
 
                 //Exporter les modèles
                 let savedTemplates = JSON.parse(localStorage.getItem('review_templates')) || [];
                 savedTemplates.forEach(template => {
                     const { name, title, review } = template;
                     //Ajoute une ligne détaillée pour chaque modèle avec une colonne vide pour ASIN et Evaluation
-                    csvContent += `;Modèle;${name};;;${title.replace(/;/g, ',')};${review.replace(/\n/g, '\\n')}\n`;
+                    csvContent += `;Modèle;${name};;;;${title.replace(/;/g, ',')};${review.replace(/\n/g, '\\n')}\n`;
                 });
 
                 //Itérer sur les éléments de localStorage
@@ -15739,11 +16144,14 @@ ${addressOptions.length && isPlus && apiOk ? `
                         const name = reviewData.name ? reviewData.name.replace(/;/g, ',') : '';
                         const title = reviewData.title.replace(/;/g, ','); //Remplacer les ";" par des ","
                         const review = reviewData.review.replace(/\n/g, '\\n');
+                        const votesUtiles = reviewData['Votes utiles'] !== undefined && reviewData['Votes utiles'] !== null
+                        ? String(reviewData['Votes utiles']).replace(/;/g, ',')
+                        : '';
                         const evaluation = reviewData.evaluation ? reviewData.evaluation.replace(/;/g, ',') : '';
                         const date = reviewData.date || '';
 
                         //Ajouter la ligne pour les avis
-                        csvContent += `${date};Avis;${name};${asin};${evaluation};${title};${review}\n`;
+                        csvContent += `${date};Avis;${name};${asin};${votesUtiles};${evaluation};${title};${review}\n`;
                     }
                 });
 
@@ -15778,14 +16186,16 @@ ${addressOptions.length && isPlus && apiOk ? `
                     for (let i = 1; i < lines.length; i++) {
                         if (lines[i]) {
                             const columns = lines[i].split(';');
-                            if (columns.length >= 5) {
+                            if (columns.length >= 7) {
                                 const date = (columns[0] || '').trim();
                                 const type = (columns[1] || '').trim();
                                 const name = (columns[2] || '').trim();
                                 const asin = (columns[3] || '').trim();
-                                const evaluation = (columns[4] || '').trim();
-                                const title = (columns[5] || '').trim();
-                                const review = (columns[6] || '').trim().replace(/\\n/g, '\n');
+                                const isNewFormat = columns.length >= 8;
+                                const votesUtiles = isNewFormat ? (columns[4] || '').trim() : '';
+                                const evaluation = isNewFormat ? (columns[5] || '').trim() : (columns[4] || '').trim();
+                                const title = isNewFormat ? (columns[6] || '').trim() : (columns[5] || '').trim();
+                                const review = (isNewFormat ? (columns[7] || '') : (columns[6] || '')).trim().replace(/\\n/g, '\n');
 
                                 if (type === "Avis") {
                                     const reviewData = { title, review, date };
@@ -15794,6 +16204,9 @@ ${addressOptions.length && isPlus && apiOk ? `
                                     }
                                     if (evaluation) {
                                         reviewData.evaluation = evaluation;
+                                    }
+                                    if (votesUtiles) {
+                                        reviewData['Votes utiles'] = votesUtiles;
                                     }
                                     localStorage.setItem(`review_${asin}`, JSON.stringify(reviewData));
                                 } else if (type === "Modèle") {
@@ -15852,7 +16265,7 @@ ${addressOptions.length && isPlus && apiOk ? `
                     box-shadow: 0px 0px 10px #ccc;
                 `;*/
                 popup.innerHTML = `
-                      <h2 id="configPopupHeader">Couleur de la bordure des avis utiles<span id="closeColorPicker" style="float: right; cursor: pointer;">&times;</span></h2>
+                      <h2 id="configPopupHeader">Couleur de la bordure des avis utiles<span id="closeColorPicker" class="pm-popup-close" style="float: right; cursor: pointer;">&times;</span></h2>
                     <input type="color" id="colorPicker" value="${hexColor}" style="width: 100%;">
                     <div class="button-container final-buttons">
                         <button class="full-width" id="saveColor">Enregistrer</button>
@@ -15908,7 +16321,7 @@ ${addressOptions.length && isPlus && apiOk ? `
             <div id="emailConfigPopup">
             <div style="position: relative;">
                 <h2 id="emailPopupHeader" style="text-align: center;">Configuration des Emails</h2>
-                <span id="closeEmailPopup" style="position: absolute; right: 10px; top: 10px; cursor: pointer;">&times;</span>
+                <span id="closeEmailPopup" class="pm-popup-close" style="position: absolute; right: 10px; top: 10px; cursor: pointer;">&times;</span>
             </div>
             <div id="emailTemplates" style="display: flex; flex-direction: column; align-items: center;">
                 <h3>Modèles existants</h3>
@@ -16123,34 +16536,46 @@ ${addressOptions.length && isPlus && apiOk ? `
               left: 50%;
               transform: translate(-50%, -50%);
               z-index: 10003;
-              background-color: white;
+              background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
               padding: 20px;
-              border-radius: 8px;
-              box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+              border-radius: 14px;
+              box-shadow: 0 18px 40px rgba(6, 61, 20, 0.15);
               width: 500px; /* Ajusté pour mieux s'adapter aux deux colonnes de checkbox */
               display: flex;
               flex-direction: column;
               align-items: stretch;
               cursor: auto;
-              border: 2px solid #ccc; /* Ajout d'un contour */
+              border: 1px solid #d8e7db; /* Ajout d'un contour */
               overflow: auto; /* Ajout de défilement si nécessaire */
               resize: both; /* Permet le redimensionnement horizontal et vertical */
             }
 
             #configPopupRR h2, #configPopupRR label {
-              color: #333;
-              margin-bottom: 20px;
+              color: #223142;
+              margin-bottom: 14px;
             }
 
             #configPopupRR h2, #colorPickerPopup h2 {
               cursor: grab;
               font-size: 1.5em;
               text-align: center;
+              position: sticky;
+              top: -20px;
+              z-index: 2;
+              background: linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,251,255,0.98) 100%);
+              padding: 14px 10px 12px;
+              margin: -20px -20px 14px;
             }
 
             #configPopupRR label {
               display: flex;
               align-items: center;
+              gap: 8px;
+              background: #ffffff;
+              border: 1px solid #e5edf6;
+              border-radius: 10px;
+              padding: 8px 10px;
+              box-shadow: 0 1px 2px rgba(6, 44, 78, 0.05);
             }
 
             #configPopupRR label input[type="checkbox"] {
@@ -16174,12 +16599,13 @@ ${addressOptions.length && isPlus && apiOk ? `
 
             #configPopupRR button,
             #emailConfigPopup button {
-              padding: 5px 10px;
-              background-color: #f3f3f3;
-              border: 1px solid #ddd;
-              border-radius: 4px;
+              padding: 8px 10px;
+              background-color: #f8fbff;
+              border: 1px solid #dce9f7;
+              border-radius: 10px;
               cursor: pointer;
               text-align: center;
+              font-weight: 600;
             }
 
             #configPopupRR button:not(.full-width), #colorPickerPopup button:not(.full-width), #emailConfigPopup button:not(.full-width) {
@@ -16195,7 +16621,7 @@ ${addressOptions.length && isPlus && apiOk ? `
 
             #configPopupRR button:hover,
             #emailConfigPopup button:hover {
-              background-color: #e8e8e8;
+              background-color: #eef5fd;
             }
 
             #configPopupRR button:active,
@@ -16203,7 +16629,8 @@ ${addressOptions.length && isPlus && apiOk ? `
               background-color: #ddd;
             }
             #configPopupRR label.disabled {
-              color: #ccc;
+              color: #99a7b5;
+              background: #f7f9fc;
             }
 
             #configPopupRR label.disabled input[type="checkbox"] {
@@ -16238,6 +16665,32 @@ ${addressOptions.length && isPlus && apiOk ? `
             #saveColor, #closeColor, #closeEmailConfig, #saveTemplateButton, #deleteTemplateButton {
               margin-top: 10px; /* Ajoute un espace de 10px au-dessus du second bouton */
               width: 100%; /* Utilise width: 100% pour assurer que le bouton prend toute la largeur */
+            }
+
+
+            #openReviewManagerEntry, #deleteReviewManagerEntry, #closeReviewManagerPopup, #closeReviewDetailsPopup, #searchReviewManagerEntry {
+              padding: 8px 14px;
+              border: none;
+              border-radius: 5px;
+              cursor: pointer;
+              width: auto;
+              color: white;
+            }
+
+            #openReviewManagerEntry, #searchReviewManagerEntry {
+              background-color: #2196F3 !important;
+            }
+
+            #openReviewManagerEntry:hover, #searchReviewManagerEntry:hover {
+              background-color: #1976D2 !important;
+            }
+
+            #deleteReviewManagerEntry, #closeReviewManagerPopup, #closeReviewDetailsPopup {
+              background-color: #f44336;
+            }
+
+            #deleteReviewManagerEntry:hover, #closeReviewManagerPopup:hover, #closeReviewDetailsPopup:hover {
+              background-color: #e53935 !important;
             }
 
             #existingTemplates {
@@ -16327,6 +16780,639 @@ ${addressOptions.length && isPlus && apiOk ? `
                     }
                 });
                 alert('Tous les avis ont été supprimés.');
+            }
+
+            function getReviewRememberEntries() {
+                const entries = [];
+                const savedTemplates = JSON.parse(localStorage.getItem('review_templates')) || [];
+
+                savedTemplates.forEach((template, index) => {
+                    entries.push({
+                        id: `template_${index}`,
+                        storageType: 'template',
+                        storageKey: 'review_templates',
+                        templateIndex: index,
+                        type: 'Modèle',
+                        date: '',
+                        dateTs: null,
+                        name: template?.name || '',
+                        asin: '',
+                        evaluation: '',
+                        title: template?.title || '',
+                        review: template?.review || '',
+                        helpfulVotes: ''
+                    });
+                });
+
+                Object.keys(localStorage).forEach(function(key) {
+                    if (!key.startsWith('review_') || key === 'review_templates') {
+                        return;
+                    }
+
+                    const raw = localStorage.getItem(key);
+                    if (!raw) {
+                        return;
+                    }
+
+                    try {
+                        const reviewData = JSON.parse(raw);
+                        const parsedDate = parseDDMMYYYYFlexible(reviewData.date || '');
+                        entries.push({
+                            id: key,
+                            storageType: 'review',
+                            storageKey: key,
+                            templateIndex: null,
+                            type: 'Avis',
+                            date: parsedDate ? parsedDate.str : (reviewData.date || ''),
+                            dateTs: parsedDate ? parsedDate.ts : null,
+                            name: reviewData.name || '',
+                            asin: key.replace('review_', ''),
+                            helpfulVotes: reviewData['Votes utiles'] ?? '',
+                            evaluation: reviewData.evaluation || 'En attente',
+                            title: reviewData.title || '',
+                            review: reviewData.review || ''
+                        });
+                    } catch (error) {
+                        console.error('[ReviewRemember] Impossible de lire une entrée du gestionnaire :', key, error);
+                    }
+                });
+
+                return entries;
+            }
+
+            function computeReviewRememberStats(entries) {
+                const reviewEntries = entries.filter(entry => entry.storageType === 'review');
+                const validReviewEntries = reviewEntries.filter(entry => entry.title.trim() !== '' && entry.review.trim() !== '');
+                const titleEntries = reviewEntries.filter(entry => entry.title.trim() !== '');
+                const contentEntries = reviewEntries.filter(entry => entry.title.trim() !== '');
+                const helpfulVotesEntries = reviewEntries.filter((entry) => {
+                    if (entry.helpfulVotes === undefined || entry.helpfulVotes === null || entry.helpfulVotes === '') {
+                        return false;
+                    }
+                    return Number.isFinite(Number(entry.helpfulVotes));
+                });
+                const topHelpfulEntry = helpfulVotesEntries.reduce((bestEntry, currentEntry) => {
+                    if (!bestEntry) {
+                        return currentEntry;
+                    }
+
+                    return Number(currentEntry.helpfulVotes) > Number(bestEntry.helpfulVotes) ? currentEntry : bestEntry;
+                }, null);
+                const totalHelpfulVotes = helpfulVotesEntries.reduce((sum, entry) => sum + Number(entry.helpfulVotes), 0);
+                const averageHelpfulVotes = helpfulVotesEntries.length > 0 ? totalHelpfulVotes / helpfulVotesEntries.length : 0;
+                const evaluationOrder = ['Excellent', 'Bien', 'Juste', 'Pauvre', 'En attente'];
+                const evaluationCounts = evaluationOrder.reduce((acc, evaluation) => {
+                    acc[evaluation] = 0;
+                    return acc;
+                }, {});
+
+                reviewEntries.forEach((entry) => {
+                    const normalizedEvaluation = (entry.evaluation || '').trim();
+                    if (evaluationCounts[normalizedEvaluation] !== undefined) {
+                        evaluationCounts[normalizedEvaluation] += 1;
+                    } else {
+                        evaluationCounts['En attente'] += 1;
+                    }
+                });
+
+                const averageTitleLength = titleEntries.length
+                ? titleEntries.reduce((sum, entry) => sum + entry.title.length, 0) / titleEntries.length
+                : 0;
+
+                const averageReviewLength = contentEntries.length
+                ? contentEntries.reduce((sum, entry) => sum + entry.review.length, 0) / contentEntries.length
+                : 0;
+
+                return {
+                    reviewCount: validReviewEntries.length,
+                    templateCount: entries.filter(entry => entry.storageType === 'template').length,
+                    averageTitleLength,
+                    averageReviewLength,
+                    totalHelpfulVotes,
+                    averageHelpfulVotes,
+                    evaluationCounts,
+                    topHelpfulProduct: topHelpfulEntry
+                };
+            }
+
+            function createReviewDetailsPopup(entry) {
+                const existingPopup = document.getElementById('reviewManagerDetailsPopup');
+                if (existingPopup) {
+                    existingPopup.remove();
+                }
+
+                const popup = document.createElement('div');
+                popup.id = 'reviewManagerDetailsPopup';
+                popup.style.cssText = `
+                    position: fixed;
+                    left: 50%;
+                    top: 50%;
+                    transform: translate(-50%, -50%);
+                    z-index: 10005;
+                    background-color: #fff;
+                    border: 2px solid #ccc;
+                    border-radius: 8px;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+                    width: min(760px, 90vw);
+                    max-height: 80vh;
+                    overflow: auto;
+                    padding: 18px;
+                `;
+
+                const safeAsin = entry.asin || '';
+                const productLink = safeAsin
+                ? `<a href="https://www.amazon.fr/dp/${safeAsin}" target="_blank" rel="noopener noreferrer">${entry.name || safeAsin}</a>`
+                : (entry.name || 'Nom indisponible');
+
+                const dateAndEvaluation = [entry.date, entry.evaluation].filter(Boolean).join(' • ');
+                console.log("Votes :",entry.helpfulVotes);
+                const votesUtiles = entry.helpfulVotes !== undefined && entry.helpfulVotes !== null && entry.helpfulVotes !== ''
+                ? entry.helpfulVotes
+                : 'N/C';
+
+                popup.innerHTML = `
+                    <h3 style="margin: 0 0 10px 0;">Détail de l'avis</h3>
+                    <div style="margin-bottom: 10px; font-size: 15px;">${productLink}</div>
+                    ${dateAndEvaluation ? `<div style="margin-bottom: 10px; color: #555;">${dateAndEvaluation}</div>` : ''}
+                    <div style="margin-bottom: 10px; color: #555;"><strong>Votes utiles :</strong> ${votesUtiles}</div>
+                    <div style="margin-bottom: 8px;"><strong>Titre :</strong></div>
+                    <div style="margin-bottom: 14px; white-space: pre-wrap;">${entry.title || '<em>Aucun titre</em>'}</div>
+                    <div style="margin-bottom: 8px;"><strong>Contenu :</strong></div>
+                    <div style="white-space: pre-wrap; border: 1px solid #ddd; border-radius: 6px; padding: 10px; max-height: 45vh; overflow: auto; background-color: #fafafa; margin-bottom: 14px;">${entry.review || '<em>Aucun contenu</em>'}</div>
+                    <div style="display: flex; justify-content: flex-end;">
+                        <button id="closeReviewDetailsPopup" style="font-weight: bold;">Fermer</button>
+                    </div>
+                `;
+
+                document.body.appendChild(popup);
+                document.getElementById('closeReviewDetailsPopup').addEventListener('click', () => popup.remove());
+            }
+
+            function createReviewManagerPopup() {
+                const existingPopup = document.getElementById('reviewManagerPopup');
+                if (existingPopup) {
+                    existingPopup.remove();
+                }
+
+                const popup = document.createElement('div');
+                popup.id = 'reviewManagerPopup';
+                popup.style.cssText = `
+                    position: fixed;
+                    left: 50%;
+                    top: 50%;
+                    transform: translate(-50%, -50%);
+                    z-index: 10004;
+                    background-color: white;
+                    border: 2px solid #ccc;
+                    border-radius: 8px;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+                    width: min(1300px, 96vw);
+                    max-height: 88vh;
+                    padding: 18px;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 10px;
+                `;
+
+
+                const reviewManagerStatsStyles = `
+                    #reviewManagerPopup {
+                        overflow: hidden;
+                    }
+                    #reviewManagerControls {
+                        display: flex;
+                        gap: 8px;
+                        align-items: center;
+                    }
+                    #reviewManagerTableContainer {
+                        overflow: auto;
+                        border: 1px solid #e3e3e3;
+                        border-radius: 6px;
+                        flex: 1;
+                        min-height: 320px;
+                    }
+                    #reviewManagerActions {
+                        display: flex;
+                        justify-content: flex-end;
+                        gap: 10px;
+                    }
+                    .pm-review-manager-stats-grid {
+                        display: grid;
+                        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+                        gap: 8px;
+                        margin-bottom: 8px;
+                    }
+                    .pm-review-manager-stat-card {
+                        border: 1px solid #d5d9d9;
+                        border-radius: 8px;
+                        padding: 8px 10px;
+                        background-color: #f9fafb;
+                    }
+                    .pm-review-manager-stat-label {
+                        font-size: 11px;
+                        color: #555;
+                    }
+                    .pm-review-manager-stat-value {
+                        font-size: 18px;
+                        font-weight: 700;
+                        line-height: 1.2;
+                    }
+                    .pm-review-manager-stats-details {
+                        display: grid;
+                        gap: 6px;
+                    }
+                    .pm-review-manager-stats-line {
+                        display: flex;
+                        flex-wrap: wrap;
+                        gap: 6px;
+                        align-items: center;
+                    }
+                    .pm-review-manager-stats-evals {
+                        display: inline-flex;
+                        flex-wrap: wrap;
+                        gap: 6px;
+                    }
+                    .pm-review-manager-eval-badge {
+                        display: inline-flex;
+                        align-items: center;
+                        gap: 4px;
+                        padding: 2px 8px;
+                        border: 1px solid #d5d9d9;
+                        border-radius: 999px;
+                        background-color: #f8f9fa;
+                    }
+                    .pm-review-manager-eval-icon {
+                        font-size: 12px;
+                        line-height: 1;
+                    }
+                    @media (max-width: 600px) {
+                        #reviewManagerPopup {
+                            width: 95% !important;
+                            height: 95% !important;
+                            padding: 10px !important;
+                            gap: 8px !important;
+                        }
+                        #reviewManagerControls {
+                            gap: 6px;
+                        }
+                        #reviewManagerSearchInput {
+                            min-width: 0;
+                            font-size: 16px;
+                        }
+                        #searchReviewManagerEntry {
+                            white-space: nowrap;
+                        }
+                        #reviewManagerTableContainer {
+                            min-height: 30vh;
+                            flex: 1 1 auto;
+                        }
+                        #reviewManagerStats {
+                            max-height: 30vh;
+                            overflow: auto;
+                            border-top: 1px solid #e3e3e3;
+                            padding-top: 8px;
+                            flex-shrink: 0;
+                        }
+                        .pm-review-manager-stats-grid {
+                            grid-template-columns: repeat(2, minmax(120px, 1fr));
+                        }
+                        #reviewManagerActions {
+                            gap: 8px;
+                        }
+                        #reviewManagerActions button {
+                            flex: 1;
+                        }
+                    }
+                `;
+
+                popup.innerHTML = `
+                    <h2 id="reviewManagerPopupHeader" style="cursor: grab; text-align: center; position: relative;">
+                        Gestionnaire d'avis
+                        <span id="closeReviewManagerCross" class="pm-popup-close" style="position: absolute; right: 0; top: 50%; transform: translateY(-50%); cursor: pointer;">&times;</span>
+                    </h2>
+                    <div id="reviewManagerControls">
+                        <input id="reviewManagerSearchInput" type="text" placeholder="ASIN ou texte" style="flex: 1; padding: 6px 8px; border: 1px solid #ccc; border-radius: 4px;">
+                        <button id="searchReviewManagerEntry" style="font-weight: bold;">Rechercher</button>
+                    </div>
+                    <div id="reviewManagerTableContainer">
+                        <table id="reviewManagerTable" style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                            <thead>
+                                <tr>
+                                    <th data-sort-key="type">Type</th>
+                                    <th data-sort-key="date">Date</th>
+                                    <th data-sort-key="name">Nom</th>
+                                    <th data-sort-key="asin">ASIN</th>
+                                    <th data-sort-key="helpfulVotes">Votes utiles</th>
+                                    <th data-sort-key="evaluation">Evaluation</th>
+                                    <th data-sort-key="title">Titre de l'avis</th>
+                                    <th data-sort-key="review">Contenu de l'avis</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                    <div id="reviewManagerStats" style="font-size: 13px; border-top: 1px solid #e3e3e3; padding-top: 10px;"></div>
+                    <div id="reviewManagerActions">
+                        <button id="openReviewManagerEntry" style="font-weight: bold;">Ouvrir</button>
+                        <button id="deleteReviewManagerEntry" style="font-weight: bold;">Supprimer</button>
+                        <button id="closeReviewManagerPopup" style="font-weight: bold;">Fermer</button>
+                    </div>
+                `;
+
+                document.body.appendChild(popup);
+                const statsStyle = document.createElement('style');
+                statsStyle.textContent = reviewManagerStatsStyles;
+                popup.appendChild(statsStyle);
+                dragElement(popup);
+
+                const table = popup.querySelector('#reviewManagerTable');
+                const tbody = table.querySelector('tbody');
+                const statsContainer = popup.querySelector('#reviewManagerStats');
+                const searchInput = popup.querySelector('#reviewManagerSearchInput');
+                const searchButton = popup.querySelector('#searchReviewManagerEntry');
+
+                let data = getReviewRememberEntries();
+                let selectedIds = new Set();
+                let sortState = { key: 'date', asc: false };
+                let lastSelectedIndex = null;
+                let searchTerm = '';
+
+                function normalizeSearchValue(value) {
+                    return (value || '')
+                        .toString()
+                        .normalize('NFD')
+                        .replace(/[\u0300-\u036f]/g, '')
+                        .toLowerCase();
+                }
+
+                function getSearchAsin(value) {
+                    const trimmedValue = (value || '').trim();
+                    if (!trimmedValue) {
+                        return null;
+                    }
+
+                    if (/^https?:\/\//i.test(trimmedValue) && /amazon\.fr/i.test(trimmedValue)) {
+                        const asinFromUrl = getASINfromURL(trimmedValue);
+                        return asinFromUrl ? asinFromUrl.toUpperCase() : null;
+                    }
+
+                    if (/^[A-Za-z0-9]{10}$/.test(trimmedValue)) {
+                        return trimmedValue.toUpperCase();
+                    }
+
+                    return null;
+                }
+
+                function getFilteredData(entries) {
+                    const trimmedSearchTerm = searchTerm.trim();
+                    if (!trimmedSearchTerm) {
+                        return entries;
+                    }
+
+                    const asinSearch = getSearchAsin(trimmedSearchTerm);
+                    if (asinSearch) {
+                        return entries.filter(entry => (entry.asin || '').toUpperCase().includes(asinSearch));
+                    }
+
+                    const normalizedSearch = normalizeSearchValue(trimmedSearchTerm);
+                    return entries.filter((entry) => {
+                        const searchableText = [entry.title, entry.name, entry.review]
+                        .map(normalizeSearchValue)
+                        .join(' ');
+                        return searchableText.includes(normalizedSearch);
+                    });
+                }
+
+                function sortData(entries) {
+                    const sorted = [...entries];
+                    const { key, asc } = sortState;
+
+                    sorted.sort((a, b) => {
+                        let valueA;
+                        let valueB;
+
+                        if (key === 'date') {
+                            valueA = a.dateTs || 0;
+                            valueB = b.dateTs || 0;
+                        } else if (key === 'helpfulVotes') {
+                            valueA = Number(a.helpfulVotes) || 0;
+                            valueB = Number(b.helpfulVotes) || 0;
+                        } else {
+                            valueA = (a[key] || '').toString().toLowerCase();
+                            valueB = (b[key] || '').toString().toLowerCase();
+                        }
+
+                        if (valueA < valueB) return asc ? -1 : 1;
+                        if (valueA > valueB) return asc ? 1 : -1;
+                        return 0;
+                    });
+
+                    return sorted;
+                }
+
+                function truncateText(value) {
+                    const txt = (value || '').toString();
+                    return txt.length > 90 ? `${txt.slice(0, 90)}…` : txt;
+                }
+
+                function getEntryById(entryId) {
+                    return data.find(entry => entry.id === entryId) || null;
+                }
+
+                function renderStats() {
+                    const stats = computeReviewRememberStats(data);
+                    const ratingColorMap = {
+                        'Excellent': '🟦',
+                        'Bien': '🟩',
+                        'Juste': '🟧',
+                        'Pauvre': '🟥',
+                        'En attente': '⬜️'
+                    };
+                    const evaluations = Object.entries(stats.evaluationCounts)
+                    .map(([name, count]) => `<span class="pm-review-manager-eval-badge"><span class="pm-review-manager-eval-icon">${ratingColorMap[name] || '⬜️'}</span><strong>${name}</strong><span>${count}</span></span>`)
+                    .join(' ');
+                    const topHelpfulProduct = stats.topHelpfulProduct
+                    ? (stats.topHelpfulProduct.asin
+                       ? `<a href="https://www.amazon.fr/dp/${stats.topHelpfulProduct.asin}" target="_blank" rel="noopener noreferrer">${stats.topHelpfulProduct.name || stats.topHelpfulProduct.asin}</a> (${stats.topHelpfulProduct.helpfulVotes})`
+                       : `${stats.topHelpfulProduct.name || 'Produit inconnu'} (${stats.topHelpfulProduct.helpfulVotes})`)
+                    : 'Aucun produit avec votes utiles';
+
+                    statsContainer.innerHTML = `
+                        <div class="pm-review-manager-stats-grid">
+                            <div class="pm-review-manager-stat-card"><div class="pm-review-manager-stat-label">Avis enregistrés</div><div class="pm-review-manager-stat-value">${stats.reviewCount}</div></div>
+                            <div class="pm-review-manager-stat-card"><div class="pm-review-manager-stat-label">Modèles enregistrés</div><div class="pm-review-manager-stat-value">${stats.templateCount}</div></div>
+                            <div class="pm-review-manager-stat-card"><div class="pm-review-manager-stat-label">Votes utiles totaux</div><div class="pm-review-manager-stat-value">${stats.totalHelpfulVotes}</div></div>
+                            <div class="pm-review-manager-stat-card"><div class="pm-review-manager-stat-label">Moyenne votes utiles</div><div class="pm-review-manager-stat-value">${stats.averageHelpfulVotes.toFixed(2)}</div></div>
+                        </div>
+                        <div class="pm-review-manager-stats-details">
+                            <div class="pm-review-manager-stats-line"><strong>Produit le plus utile :</strong><span>${topHelpfulProduct}</span></div>
+                            <div class="pm-review-manager-stats-line"><strong>Longueur moyenne :</strong><span>Titre ${stats.averageTitleLength.toFixed(1)} caractères • Avis ${stats.averageReviewLength.toFixed(1)} caractères</span></div>
+                            <div class="pm-review-manager-stats-line"><strong>Répartition des évaluations :</strong><span class="pm-review-manager-stats-evals">${evaluations || '<span>Aucune donnée</span>'}</span></div>
+                        </div>
+                    `;
+                }
+
+                function renderRows() {
+                    const filteredData = getFilteredData(data);
+                    const sortedData = sortData(filteredData);
+                    tbody.innerHTML = '';
+
+                    sortedData.forEach((entry, index) => {
+                        const row = document.createElement('tr');
+                        row.dataset.entryId = entry.id;
+                        row.style.cursor = 'pointer';
+                        row.style.borderBottom = '1px solid #f0f0f0';
+                        row.style.backgroundColor = selectedIds.has(entry.id) ? '#e8f0fe' : '';
+
+                        const cells = [
+                            entry.type,
+                            entry.date,
+                            entry.name,
+                            entry.asin,
+                            entry.helpfulVotes,
+                            entry.evaluation,
+                            truncateText(entry.title),
+                            truncateText(entry.review)
+                        ];
+
+                        cells.forEach((cellValue) => {
+                            const cell = document.createElement('td');
+                            cell.textContent = cellValue ?? '';
+                            cell.style.padding = '8px 6px';
+                            cell.style.verticalAlign = 'top';
+                            row.appendChild(cell);
+                        });
+
+                        row.addEventListener('click', (event) => {
+                            const currentId = entry.id;
+
+                            if (event.shiftKey && lastSelectedIndex !== null) {
+                                const start = Math.min(lastSelectedIndex, index);
+                                const end = Math.max(lastSelectedIndex, index);
+                                for (let i = start; i <= end; i += 1) {
+                                    selectedIds.add(sortedData[i].id);
+                                }
+                            } else if (event.ctrlKey || event.metaKey) {
+                                if (selectedIds.has(currentId)) {
+                                    selectedIds.delete(currentId);
+                                } else {
+                                    selectedIds.add(currentId);
+                                }
+                                lastSelectedIndex = index;
+                            } else {
+                                selectedIds = new Set([currentId]);
+                                lastSelectedIndex = index;
+                            }
+
+                            renderRows();
+                        });
+
+                        row.addEventListener('dblclick', () => {
+                            createReviewDetailsPopup(entry);
+                        });
+
+                        tbody.appendChild(row);
+                    });
+
+                    renderStats();
+                }
+
+                popup.querySelectorAll('th').forEach((th) => {
+                    th.style.padding = '8px 6px';
+                    th.style.textAlign = 'left';
+                    th.style.borderBottom = '1px solid #ddd';
+                    th.style.position = 'sticky';
+                    th.style.top = '0';
+                    th.style.backgroundColor = '#fafafa';
+                    th.style.cursor = 'pointer';
+
+                    th.addEventListener('click', () => {
+                        const key = th.dataset.sortKey;
+                        if (sortState.key === key) {
+                            sortState.asc = !sortState.asc;
+                        } else {
+                            sortState = { key, asc: true };
+                        }
+                        renderRows();
+                    });
+                });
+
+                searchButton.addEventListener('click', () => {
+                    searchTerm = searchInput.value || '';
+                    selectedIds = new Set();
+                    lastSelectedIndex = null;
+                    renderRows();
+                });
+
+                searchInput.addEventListener('keydown', (event) => {
+                    if (event.key === 'Enter') {
+                        event.preventDefault();
+                        searchButton.click();
+                    }
+                });
+
+                const openButton = document.getElementById('openReviewManagerEntry');
+                if (openButton) {
+                    const openButtonStyle = window.getComputedStyle(openButton);
+                    searchButton.style.backgroundColor = openButtonStyle.backgroundColor;
+                    searchButton.style.color = openButtonStyle.color;
+                    searchButton.style.border = openButtonStyle.border;
+                }
+
+                openButton.addEventListener('click', () => {
+                    const firstSelectedId = Array.from(selectedIds)[0];
+                    if (!firstSelectedId) {
+                        alert('Sélectionnez une ligne à ouvrir.');
+                        return;
+                    }
+
+                    const entry = getEntryById(firstSelectedId);
+                    if (entry) {
+                        createReviewDetailsPopup(entry);
+                    }
+                });
+
+                document.getElementById('deleteReviewManagerEntry').addEventListener('click', () => {
+                    const selectedEntries = Array.from(selectedIds)
+                    .map(entryId => getEntryById(entryId))
+                    .filter(Boolean);
+
+                    if (!selectedEntries.length) {
+                        alert('Sélectionnez au moins une ligne à supprimer.');
+                        return;
+                    }
+
+                    if (!confirm(`Confirmer la suppression de ${selectedEntries.length} élément(s) ?`)) {
+                        return;
+                    }
+
+                    const templateIndexes = [];
+                    selectedEntries.forEach((entry) => {
+                        if (entry.storageType === 'template') {
+                            templateIndexes.push(entry.templateIndex);
+                        } else if (entry.storageType === 'review') {
+                            localStorage.removeItem(entry.storageKey);
+                        }
+                    });
+
+                    if (templateIndexes.length) {
+                        const templates = JSON.parse(localStorage.getItem('review_templates')) || [];
+                        const updatedTemplates = templates.filter((_, index) => !templateIndexes.includes(index));
+                        localStorage.setItem('review_templates', JSON.stringify(updatedTemplates));
+                    }
+
+                    selectedIds = new Set();
+                    lastSelectedIndex = null;
+                    data = getReviewRememberEntries();
+                    renderRows();
+                    reloadButtons();
+                });
+
+                const closeReviewManagerPopupButton = document.getElementById('closeReviewManagerPopup');
+                closeReviewManagerPopupButton.addEventListener('click', () => popup.remove());
+                document.getElementById('closeReviewManagerCross').addEventListener('click', () => popup.remove());
+
+                renderRows();
             }
 
             //Fonction pour recharger les boutons
@@ -16590,6 +17676,18 @@ ${addressOptions.length && isPlus && apiOk ? `
                 }
             }
 
+            //Fonction pour supprimer l'avis
+            function deleteReview() {
+                const asin = getASIN();
+                const storageKey = `review_${asin}`;
+                if (localStorage.getItem(storageKey)) {
+                    if (confirm('Êtes-vous sûr de vouloir supprimer cet avis sauvegardé ?')) {
+                        localStorage.removeItem(storageKey);
+                        reloadButtons();
+                    }
+                }
+            }
+
             //Fonction pour sauvegarder l'avis
             function saveReview(autoSave = false) {
                 //Si null ou undefined, on utilise selectorTitleOld
@@ -16737,6 +17835,7 @@ ${addressOptions.length && isPlus && apiOk ? `
                 const asin = getASIN();
                 if (localStorage.getItem(`review_${asin}`)) {
                     addButton('Restaurer l\'avis', restoreReview, thirdLineContainer);
+                    addButton('Supprimer l\'avis', deleteReview, thirdLineContainer);
                 }
 
                 buttonsContainer.appendChild(thirdLineContainer); //Ajouter la troisième ligne au conteneur principal
@@ -16773,9 +17872,9 @@ ${addressOptions.length && isPlus && apiOk ? `
                 popup.id = "configPopupRR";
                 popup.innerHTML = `
                 <h2 id="configPopupHeader">
-                  <span style="color: #0463d5;">Paramètres</span>
-                  <span style="color: #1d820c;">ReviewRemember</span>
-                  <span id="closePopupRR" style="float: right; cursor: pointer;">&times;</span></h2>
+                  <span>Paramètres</span>
+                    <span style="color: #0463d5;">Review</span><span style="color: #1d820c;">Remember</span>
+                  <span id="closePopupRR" class="pm-popup-close" style="float: right; cursor: pointer;">&times;</span></h2>
                 <div style="text-align: center; margin-bottom: 20px;">
                     <p id="links-container" style="text-align: center;">
                         <a href="${baseUrlPickme}/wiki/doku.php?id=plugins:reviewremember" target="_blank">
@@ -16815,6 +17914,7 @@ ${addressOptions.length && isPlus && apiOk ? `
 
                 //Ajoute des écouteurs pour les nouveaux boutons
                 document.getElementById('emailPopup').addEventListener('click', createEmailPopup);
+                document.getElementById('reviewManager').addEventListener('click', createReviewManagerPopup);
                 document.getElementById('reviewColor').addEventListener('click', setHighlightColor);
                 document.getElementById('exportCSV').addEventListener('click', exportReviewsToCSV);
 
@@ -16913,11 +18013,12 @@ ${addressOptions.length && isPlus && apiOk ? `
                 return `
             <div class="button-container action-buttons">
               <button id="emailPopup">Configurer les emails</button><br>
-              <button id="reviewColor">Couleur de bordure des avis</button><br>
+              <button id="reviewManager">Gestionnaire d'avis</button><br>
               <button id="exportCSV">Exporter les avis en CSV</button>
               <button id="importCSV">Importer les avis en CSV</button>
               <button id="purgeTemplate">Supprimer tous les modèles d'avis</button>
               <button id="purgeReview">Supprimer tous les avis</button>
+              <button id="reviewColor">Couleur de bordure des avis</button><br>
             </div>
             <div class="button-container final-buttons">
               <button class="full-width" id="saveConfigRR">Enregistrer</button>
@@ -16963,6 +18064,59 @@ ${addressOptions.length && isPlus && apiOk ? `
                 var pageX = "Page X";
 
                 //Trie des avis sur profil
+                //Détecte si le profil affiché est le profil personnel connecté
+                function estProfilPersonnel() {
+                    return Boolean(
+                        document.querySelector('#shop-influencer-owner-view-section')
+                        || document.querySelector('#shop-profile-owner-goto-section')
+                        || document.querySelector('#storefront-edit-profile-button [data-action="a-edit-customer-profile-modal"]')
+                    );
+                }
+
+                //Calcule le total des votes utiles à partir des données du gestionnaire d'avis
+                function calculerTotalVotesUtilesProfil() {
+                    const entries = getReviewRememberEntries();
+                    const stats = computeReviewRememberStats(entries);
+                    return stats.totalHelpfulVotes;
+                }
+
+                //Affiche le total des votes utiles sous la section avec le bouton modifier
+                function mettreAJourTotalVotesUtilesProfil() {
+                    if (!estProfilPersonnel()) {
+                        const blocExistant = document.getElementById('pm-total-helpful-votes-profile');
+                        if (blocExistant) {
+                            blocExistant.remove();
+                        }
+                        return;
+                    }
+                    const sectionSuivi = document.querySelector('#shop-influencer-follow-section');
+                    if (!sectionSuivi) {
+                        return;
+                    }
+                    const totalVotes = calculerTotalVotesUtilesProfil();
+                    let blocTotal = document.getElementById('pm-total-helpful-votes-profile');
+                    if (!blocTotal) {
+                        blocTotal = document.createElement('div');
+                        blocTotal.id = 'pm-total-helpful-votes-profile';
+                        blocTotal.style.cssText = `
+                            margin: 12px auto 0;
+                            padding: 8px 16px;
+                            font-size: 15px;
+                            font-weight: 700;
+                            text-align: center;
+                            width: fit-content;
+                            max-width: 90%;
+                            background: linear-gradient(135deg, #fff3cd, #ffeeba);
+                            border: 1px solid #f0c14b;
+                            border-radius: 8px;
+                            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                            color: #333;
+                        `;
+                        sectionSuivi.insertAdjacentElement('afterend', blocTotal);
+                    }
+                    blocTotal.textContent = `❤️ Nombre total de votes utiles : ${totalVotes}`;
+                }
+
                 //Marquer une carte comme traitée
                 function marquerCarteCommeTraitee(carte) {
                     carte.dataset.traitee = 'true';
@@ -16990,34 +18144,115 @@ ${addressOptions.length && isPlus && apiOk ? `
                     return 0;
                 }
 
+
+                //Récupère l'ASIN depuis une carte d'avis de profil
+                function extraireAsinDepuisCarte(carte) {
+                    const menuIngress = carte.querySelector('[data-a-review-menu-ingress-display]');
+                    if (menuIngress) {
+                        const menuDataRaw = menuIngress.getAttribute('data-a-review-menu-ingress-display') || '';
+                        const asinFromMenu = menuDataRaw.match(/[?&]asin=([A-Z0-9]{10})/i);
+                        if (asinFromMenu && asinFromMenu[1]) {
+                            return asinFromMenu[1].toUpperCase();
+                        }
+                    }
+
+                    const liens = carte.querySelectorAll('a[href]');
+                    for (const lien of liens) {
+                        const asin = extractASIN(lien.href);
+                        if (asin) {
+                            return asin;
+                        }
+                    }
+                    return null;
+                }
+
+                //Synchronise les votes utiles des avis depuis la page profil
+                function synchroniserVotesUtilesDepuisProfil(carte) {
+                    const asin = extraireAsinDepuisCarte(carte);
+                    if (!asin) {
+                        return;
+                    }
+
+                    const votesUtiles = extraireValeur(carte);
+                    const storageKey = `review_${asin}`;
+                    const storedValue = localStorage.getItem(storageKey);
+                    let existingData = {};
+
+                    if (storedValue) {
+                        try {
+                            existingData = JSON.parse(storedValue) || {};
+                        } catch (error) {
+                            console.error("[ReviewRemember] Impossible d'analyser les données existantes pour l'ASIN :", asin, error);
+                            existingData = {};
+                        }
+                    } else {
+                        //Crée une entrée minimale pour conserver le vote utile même sans avis en mémoire
+                        existingData = {
+                            title: '',
+                            review: '',
+                            date: '',
+                            evaluation: 'En attente',
+                            name: ''
+                        };
+                    }
+
+                    if ((Number(existingData['Votes utiles']) || 0) === votesUtiles) {
+                        return;
+                    }
+
+                    const updatedReview = {
+                        ...existingData,
+                        title: existingData.title || '',
+                        review: existingData.review || '',
+                        'Votes utiles': votesUtiles
+                    };
+
+                    localStorage.setItem(storageKey, JSON.stringify(updatedReview));
+                }
+
                 //Réorganisation principale
                 function reorganiserCartes() {
+                    if (!estProfilPersonnel()) {
+                        return;
+                    }
                     const cartes = Array.from(document.querySelectorAll('.review-card-container:not([data-traitee="true"]), .item-hero-container.review-item-hero-container:not([data-traitee="true"])'));
+                    cartes.forEach(carte => synchroniserVotesUtilesDepuisProfil(carte));
                     const cartesAvecValeur = cartes.filter(carte => extraireValeur(carte) > 0);
 
                     if (cartesAvecValeur.length > 0) {
                         cartesAvecValeur.sort((a, b) => extraireValeur(b) - extraireValeur(a));
                         const conteneur = document.querySelector('#reviewTabContentContainer');
                         cartesAvecValeur.forEach(carte => {
+                            synchroniserVotesUtilesDepuisProfil(carte);
                             marquerCarteCommeTraitee(carte);
                             carte.style.setProperty('border', `3px solid ${reviewColor}`, 'important');
                             conteneur.prepend(carte);
                         });
                         classerCartesTraitees();
                     }
+                    mettreAJourTotalVotesUtilesProfil();
                 }
 
                 //Observer les changements sur la page profile
                 function changeProfil() {
                     if (window.location.href.startsWith('https://www.amazon.fr/gp/profile')) {
+                        if (!estProfilPersonnel()) {
+                            return;
+                        }
+
+                        const conteneurAvis = document.querySelector('#reviewTabContentContainer');
+                        if (!conteneurAvis) {
+                            return;
+                        }
                         const observer = new MutationObserver((mutations) => {
                             let mutationsAvecAjouts = mutations.some(mutation => mutation.addedNodes.length > 0);
                             if (mutationsAvecAjouts) {
                                 reorganiserCartes();
                             }
                         });
-                        observer.observe(document.querySelector('#reviewTabContentContainer'), { childList: true, subtree: true });
+                        observer.observe(conteneurAvis, { childList: true, subtree: true });
                         reorganiserCartes();
+                        mettreAJourTotalVotesUtilesProfil();
                     }
                 }
 
@@ -18145,7 +19380,8 @@ ${addressOptions.length && isPlus && apiOk ? `
                                     review: '',
                                     date: dateValue || '',
                                     evaluation: evaluationValue,
-                                    name: productName
+                                    name: productName,
+                                    'Votes utiles': ''
                                 };
                                 localStorage.setItem(storageKey, JSON.stringify(newEntry));
                                 return;
@@ -18209,6 +19445,40 @@ ${addressOptions.length && isPlus && apiOk ? `
                 let scanActionsUi = null;
                 let scanCountdownInterval = null;
                 let scanNavigationEta = null;
+
+                function isScanPaused(state = null) {
+                    const scanState = state || readScanState();
+                    return !!(scanState && scanState.paused);
+                }
+
+                function setScanPaused(paused) {
+                    const state = readScanState();
+                    if (!state) {
+                        return;
+                    }
+                    state.paused = !!paused;
+                    saveScanState(state);
+                }
+
+                function toggleScanPause() {
+                    const state = readScanState();
+                    if (!state) {
+                        return;
+                    }
+                    const nextPaused = !isScanPaused(state);
+                    setScanPaused(nextPaused);
+                    if (nextPaused) {
+                        if (scanNavigationTimeout !== null) {
+                            clearTimeout(scanNavigationTimeout);
+                            scanNavigationTimeout = null;
+                        }
+                        stopScanDelayCountdown();
+                        isScanStepRunning = false;
+                    } else {
+                        handleReviewScanIfNeeded();
+                    }
+                    refreshScanActionsUi();
+                }
 
                 //Retourne {startDate:"DD/MM/YYYY", startTs:number, sourceText:string, node:Element} ou null
                 function getVineEvaluationPeriodStartFromAccountPage(root = document) {
@@ -18498,6 +19768,13 @@ ${addressOptions.length && isPlus && apiOk ? `
                         return;
                     }
 
+                    if (isScanPaused(state)) {
+                        isScanStepRunning = false;
+                        stopScanDelayCountdown();
+                        refreshScanActionsUi();
+                        return;
+                    }
+
                     if (isScanStepRunning) {
                         return;
                     }
@@ -18505,7 +19782,8 @@ ${addressOptions.length && isPlus && apiOk ? `
 
                     waitForReviewsTable(() => {
                         const limitTs = Number(state.limitTs);
-                        if (!Number.isFinite(limitTs)) {
+                        const hasLimit = Number.isFinite(limitTs);
+                        if (state.mode !== 'all_pages' && !hasLimit) {
                             clearScanState();
                             stopScanDelayCountdown();
                             refreshScanActionsUi();
@@ -18513,15 +19791,17 @@ ${addressOptions.length && isPlus && apiOk ? `
                             return;
                         }
 
-                        const result = detectOlderReview(limitTs);
-                        if (result.foundOlder) {
-                            saveScanCompletion();
-                            clearScanState();
-                            stopScanDelayCountdown();
-                            alert(`Scan terminé : avis plus ancien que ${state.limitLabel || 'la limite'} trouvé.`);
-                            refreshScanActionsUi();
-                            isScanStepRunning = false;
-                            return;
+                        if (hasLimit) {
+                            const result = detectOlderReview(limitTs);
+                            if (result.foundOlder) {
+                                saveScanCompletion();
+                                clearScanState();
+                                stopScanDelayCountdown();
+                                alert(`Scan terminé : avis plus ancien que ${state.limitLabel || 'la limite'} trouvé.`);
+                                refreshScanActionsUi();
+                                isScanStepRunning = false;
+                                return;
+                            }
                         }
 
                         const nextUrl = findNextReviewPageUrl();
@@ -18560,7 +19840,8 @@ ${addressOptions.length && isPlus && apiOk ? `
                     saveScanState({
                         mode: 'period',
                         limitTs: evaluation.startTs,
-                        limitLabel: evaluation.startDate
+                        limitLabel: evaluation.startDate,
+                        paused: false
                     });
                     stopScanDelayCountdown();
                     refreshScanActionsUi();
@@ -18571,11 +19852,44 @@ ${addressOptions.length && isPlus && apiOk ? `
                     saveScanState({
                         mode: 'all',
                         limitTs: scanStopAllTs,
-                        limitLabel: '09/06/2025'
+                        limitLabel: '09/06/2025',
+                        paused: false
                     });
                     stopScanDelayCountdown();
                     refreshScanActionsUi();
                     goToReviewPage(1);
+                }
+
+                function startAllPagesScan() {
+                    saveScanState({
+                        mode: 'all_pages',
+                        limitLabel: 'Toutes les pages',
+                        paused: false
+                    });
+                    stopScanDelayCountdown();
+                    refreshScanActionsUi();
+                    goToReviewPage(1);
+                }
+
+                function promptScanMode() {
+                    const userChoice = prompt("Choisissez le mode de scan :\n1 = Scanner la période actuelle\n2 = Jusqu'à la date du début des évaluations (09/06/2025)\n3 = Toutes les pages\n\nTapez 1, 2 ou 3.");
+                    if (!userChoice) {
+                        return;
+                    }
+                    const normalizedChoice = userChoice.trim();
+                    if (normalizedChoice === '1') {
+                        startPeriodScan();
+                        return;
+                    }
+                    if (normalizedChoice === '2') {
+                        startFullScan();
+                        return;
+                    }
+                    if (normalizedChoice === '3') {
+                        startAllPagesScan();
+                        return;
+                    }
+                    alert('Choix invalide. Veuillez cliquer sur "Scanner" puis taper 1, 2 ou 3.');
                 }
 
                 function toggleReviewScan(mode) {
@@ -18585,7 +19899,7 @@ ${addressOptions.length && isPlus && apiOk ? `
                         return;
                     }
                     if (mode === 'period') {
-                        startPeriodScan();
+                        promptScanMode();
                     } else {
                         startFullScan();
                     }
@@ -18596,12 +19910,13 @@ ${addressOptions.length && isPlus && apiOk ? `
                     const state = readScanState();
                     const hasEvaluationStart = !!getStoredEvaluationPeriodStart();
                     const shouldDisable = !hasEvaluationStart && !state;
-                    const { btnAll, btnPeriod, btnAllText, btnPeriodText, warning } = scanActionsUi;
-                    btnAll.style.display = 'inline-flex';
+                    const { btnAll, btnPeriod, btnAllText, btnPeriodText, btnPause, btnPauseText, warning } = scanActionsUi;
+                    btnAll.style.display = 'none';
                     btnPeriod.style.display = 'inline-flex';
+                    btnPause.style.display = 'none';
                     btnAllText.textContent = 'Tout scanner';
-                    btnPeriodText.textContent = 'Scanner la période';
-                    [btnAll, btnPeriod].forEach(btn => {
+                    btnPeriodText.textContent = 'Scanner';
+                    [btnPeriod].forEach(btn => {
                         btn.style.opacity = shouldDisable ? '0.5' : '1';
                         btn.style.pointerEvents = shouldDisable ? 'none' : 'auto';
                     });
@@ -18609,12 +19924,18 @@ ${addressOptions.length && isPlus && apiOk ? `
                         warning.style.display = shouldDisable ? 'block' : 'none';
                     }
                     if (state) {
-                        const activeBtn = state.mode === 'period' ? btnPeriod : btnAll;
-                        const inactiveBtn = state.mode === 'period' ? btnAll : btnPeriod;
-                        const activeText = state.mode === 'period' ? btnPeriodText : btnAllText;
-                        inactiveBtn.style.display = 'none';
-                        activeText.textContent = 'Arrêter le scan';
-                        updateScanDelayDisplay();
+                        btnPeriodText.textContent = 'Arrêter le scan';
+                        btnPause.style.display = 'inline-flex';
+                        btnPauseText.textContent = isScanPaused(state) ? 'Reprendre' : 'Pause';
+                        if (isScanPaused(state)) {
+                            stopScanDelayCountdown();
+                            if (scanActionsUi && scanActionsUi.delayInfo) {
+                                scanActionsUi.delayInfo.textContent = 'Scan en pause';
+                                scanActionsUi.delayInfo.style.display = 'flex';
+                            }
+                        } else {
+                            updateScanDelayDisplay();
+                        }
                     } else {
                         stopScanDelayCountdown();
                     }
@@ -18661,10 +19982,23 @@ ${addressOptions.length && isPlus && apiOk ? `
                     const btnPeriodText = document.createElement('a');
                     btnPeriodText.className = 'a-button-text';
                     btnPeriodText.href = 'javascript:void(0)';
-                    btnPeriodText.textContent = 'Scanner la période';
+                    btnPeriodText.textContent = 'Scanner';
                     btnPeriodText.addEventListener('click', () => toggleReviewScan('period'));
                     btnPeriodInner.appendChild(btnPeriodText);
                     btnPeriod.appendChild(btnPeriodInner);
+
+                    const btnPause = document.createElement('span');
+                    btnPause.className = 'a-button a-button-primary vvp-reviews-table--action-btn';
+                    btnPause.style.display = 'none';
+                    const btnPauseInner = document.createElement('span');
+                    btnPauseInner.className = 'a-button-inner';
+                    const btnPauseText = document.createElement('a');
+                    btnPauseText.className = 'a-button-text';
+                    btnPauseText.href = 'javascript:void(0)';
+                    btnPauseText.textContent = 'Pause';
+                    btnPauseText.addEventListener('click', () => toggleScanPause());
+                    btnPauseInner.appendChild(btnPauseText);
+                    btnPause.appendChild(btnPauseInner);
 
                     const btnHelp = document.createElement('span');
                     btnHelp.className = 'a-button vvp-reviews-table--action-btn';
@@ -18674,7 +20008,7 @@ ${addressOptions.length && isPlus && apiOk ? `
                     btnHelpText.className = 'a-button-text';
                     btnHelpText.href = 'javascript:void(0)';
                     btnHelpText.textContent = '?';
-                    btnHelpText.addEventListener('click', () => alert("Le scan des avis vérifiés permet de mettre à jour dans la mémoire locale la date, le nom du produit et son évaluation. Le scan va parcourir les pages automatiquement avec un délai aléatoire, il faut juste le laisser faire (ne pas ouvrir une autre page ou naviguer pendant le scan).\n- Tout scanner : scannera jusqu'au 10/06/2025, date à laquelle les évaluations commencent\n- Scanner la période : scannera jusqu'à la date du début de votre période d'évaluation actuelle"));
+                    btnHelpText.addEventListener('click', () => alert("Le scan des avis vérifiés permet de mettre à jour dans la mémoire locale la date, le nom du produit et son évaluation. Le scan va parcourir les pages automatiquement avec un délai aléatoire, il faut juste le laisser faire (ne pas ouvrir une autre page ou naviguer pendant le scan).\n- Scanner : ouvre un choix avec 3 options (période actuelle, jusqu'au 09/06/2025, toutes les pages)\n- Arrêter le scan : stoppe complètement le scan en cours\n- Pause/Reprendre : met en pause ou relance le scan sans le réinitialiser"));
                     btnHelpInner.appendChild(btnHelpText);
                     btnHelp.appendChild(btnHelpInner);
 
@@ -18692,13 +20026,13 @@ ${addressOptions.length && isPlus && apiOk ? `
                     warning.style.lineHeight = '16px';
                     warning.innerHTML = 'Le scan nécessite au moins une visite de la page Compte. Rendez-vous sur <a href="https://www.amazon.fr/vine/account" target="_blank">https://www.amazon.fr/vine/account</a> puis revenez ici.';
 
-                    container.appendChild(btnAll);
                     container.appendChild(btnPeriod);
+                    container.appendChild(btnPause);
                     container.appendChild(btnHelp);
                     container.appendChild(delayInfo);
                     container.appendChild(warning);
 
-                    scanActionsUi = { btnAll, btnPeriod, btnAllText, btnPeriodText, delayInfo, warning };
+                    scanActionsUi = { btnAll, btnPeriod, btnAllText, btnPeriodText, btnPause, btnPauseText, delayInfo, warning };
                     refreshScanActionsUi();
 
                     header.appendChild(container);
