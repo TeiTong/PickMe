@@ -226,7 +226,7 @@ NOTES:
             const doitVerifier = prochainCompteur >= 10;
 
             GM_setValue('pickMeUpdateCheckCounter', doitVerifier ? 0 : prochainCompteur);
-console.log(doitVerifier);
+
             if (doitVerifier) {
                 verifierMiseAJourPickMe();
             }
