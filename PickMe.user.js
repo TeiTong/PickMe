@@ -226,7 +226,7 @@ NOTES:
             const doitVerifier = prochainCompteur >= 10;
 
             GM_setValue('pickMeUpdateCheckCounter', doitVerifier ? 0 : prochainCompteur);
-
+console.log(doitVerifier);
             if (doitVerifier) {
                 verifierMiseAJourPickMe();
             }
@@ -8054,7 +8054,7 @@ select.btn-like {
       ${createCheckbox('notifEnabled', '(Premium) Activer les notifications', 'Affiche une notification lors du signalement d\'un nouvel objet "Disponible pour tous", un up ou autre selon la configuration. Ne fonctionne que si une page Amazon était active dans les dernières secondes ou si le centre de notifications est ouvert en Auto-refresh de moins de 30 secondes.',!isPremium)}
       ${createCheckbox('sendReco', '(Premium) À chaque nouvelle recommandation recevoir le produit en message privé sur discord','Attention, si vous activez cette option, vos recommandations seront stockées sur le serveur distant, même si aucun usage autre que l\'option n\'en sera fait. Contrairement aux autres options, le fait qu\'elle soit activée ou non est centralisé sur le serveur et non local.', !isPremium, isReco)}
       ${createCheckbox('ordersInfos', '(Premium) Afficher l\'ETV et les informations de la communauté sur les commandes','Affiche l\'ETV du produit, le nombre de variantes, le drapeau d\'origine du vendeur et s\'il est limité (si info disponible) ainsi que le nombre de personnes ayant pu commander ou non le produit (rond vert : commande réussie, rond rouge : commande en erreur).', !isPremium)}
-      ${createCheckbox('flagEnabled', '(Premium) Afficher le drapeau montrant l\'origine du vendeur','Un drapeau est ajouté sur le bouton des détails pour informer du pays d\'origine du produit.', !isPremium)}
+      ${createCheckbox('flagEnabled', '(Premium/Obsolète) Afficher le drapeau montrant l\'origine du vendeur','Un drapeau est ajouté sur le bouton des détails pour informer du pays d\'origine du produit.', !isPremium)}
       ${createCheckbox('statsEnabled', '(Premium+) Afficher les statistiques produits','Affiche la quantité de produits ajoutés ce jour et dans le mois à côté des catégories.', !isPremiumPlus)}
       ${createCheckbox('ordersStatsEnabled', '(Premium+) Afficher le nombre de commandes du jour/mois','Affiche le nombre de commandes passées sur la journée et le mois en cours.', !isPremiumPlus)}
     </div>
