@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PickMe
 // @namespace    http://tampermonkey.net/
-// @version      3.7.0
+// @version      3.8.0
 // @description  Plugin d'aide à la navigation pour les membres du discord Amazon Vine FR : https://discord.gg/amazonvinefr
 // @author       Créateur/Codeur principal : MegaMan / Codeur secondaire : Sulff, ChatGPT, Claude et Gemini / Testeurs : Louise, L'avocat du Diable et Popato (+ du code de lelouch_di_britannia, FMaz008 et Thorvarium)
 // @match        https://www.amazon.fr/vine/vine-items
@@ -60,6 +60,20 @@ NOTES:
         const pickMePatchnoteWikiUrl = "https://vinepick.me/wiki/doku.php?id=plugins:pickme:historique_des_versions";
         const updateNotifyEnabled = GM_getValue('updateNotifyEnabled', true);
         GM_setValue('updateNotifyEnabled', updateNotifyEnabled);
+
+        function appendToHeadWhenReady(node) {
+            if (document.head) {
+                document.head.appendChild(node);
+                return;
+            }
+            const obs = new MutationObserver(() => {
+                if (document.head) {
+                    obs.disconnect();
+                    document.head.appendChild(node);
+                }
+            });
+            obs.observe(document.documentElement, { childList: true, subtree: true });
+        }
 
         function comparerVersions(versionLocale, versionDistante) {
             const locale = String(versionLocale || '').split('.').map(partie => parseInt(partie, 10) || 0);
@@ -124,7 +138,7 @@ NOTES:
                     background: #f44336;
                 }
             `;
-            document.head.appendChild(style);
+            appendToHeadWhenReady(style);
 
             const alerte = document.createElement('div');
             alerte.id = idAlerte;
@@ -291,7 +305,7 @@ NOTES:
               display: none !important;
             }
             `
-                document.head.appendChild(styleHeader);
+                appendToHeadWhenReady(styleHeader);
             }
 
         }
@@ -425,7 +439,7 @@ NOTES:
                         margin-bottom: 4px;
                     }
                 `;
-                document.head.appendChild(style);
+                appendToHeadWhenReady(style);
             }
 
             function injectAlert() {
@@ -588,7 +602,7 @@ NOTES:
                         font-size: 18px;
                     }
                 `;
-                document.head.appendChild(style);
+                appendToHeadWhenReady(style);
             }
 
             function parseEuroAmount(text) {
@@ -2018,6 +2032,45 @@ NOTES:
 
         //Gestion des favoris sur PickMe Web
         if ((window.location.hostname === "pickme.alwaysdata.net" || window.location.hostname === hostnamePickMe) && /^\/[^\/]+\.php$/.test(window.location.pathname)) {
+            function applyNsfwOnPickMeWeb() {
+                if (!NSFWEnabled && !NSFWHide) {
+                    return;
+                }
+
+                const nsfwItems = document.querySelectorAll('.result-item.nsfw-item, .result-item[data-nsfw="1"]');
+                nsfwItems.forEach(function(item) {
+                    if (NSFWHide) {
+                        item.style.display = 'none';
+                        return;
+                    }
+
+                    if (!NSFWEnabled) {
+                        return;
+                    }
+
+                    const imageElement = item.querySelector('img:not(.favori-icon)');
+                    if (!imageElement) {
+                        return;
+                    }
+
+                    imageElement.style.transition = 'filter 0.3s ease';
+                    imageElement.style.filter = `blur(${blurLevel}px)`;
+
+                    if (imageElement.dataset.pmNsfwToggleBound !== 'true') {
+                        imageElement.addEventListener('click', function(event) {
+                            event.preventDefault();
+                            event.stopImmediatePropagation();
+                            if (imageElement.style.filter === `blur(${blurLevel}px)`) {
+                                imageElement.style.filter = 'blur(0px)';
+                            } else {
+                                imageElement.style.filter = `blur(${blurLevel}px)`;
+                            }
+                        }, true);
+                        imageElement.dataset.pmNsfwToggleBound = 'true';
+                    }
+                });
+            }
+
             document.addEventListener('click', function(event) {
                 //Vérifier si l'élément cliqué a la classe 'favori-icon'
                 if (event.target.classList.contains('favori-icon')) {
@@ -2031,6 +2084,17 @@ NOTES:
                     }
                 }
             });
+
+            applyNsfwOnPickMeWeb();
+
+            const resultsContainer = document.getElementById('results');
+            if (resultsContainer) {
+                const pickMeWebObserver = new MutationObserver(function() {
+                    applyNsfwOnPickMeWeb();
+                });
+                pickMeWebObserver.observe(resultsContainer, { childList: true, subtree: true });
+            }
+
             //Auto log si on a pickme installé
             //On check s'il y a la zone de saisie de la clé API
             const apiKeyInput = document.querySelector('input[type="text"].form-control#api_key[name="api_key"][required]');
@@ -2552,7 +2616,7 @@ NOTES:
             } else {
                 styleElement.innerHTML = 'body { display: none !important; }';
             }
-            document.head.appendChild(styleElement);
+            appendToHeadWhenReady(styleElement);
         }
 
         function displayContent() {
@@ -2580,10 +2644,154 @@ NOTES:
 
             var version = GM_info.script.version;
 
+            //Thème auto par dates
+            const autoThemeByDateEnabled = GM_getValue('autoThemeByDateEnabled', true);
+            const autoThemeCache = GM_getValue('themeApiCacheV2', null);
+
+            function dateDuJour() {
+                const maintenant = new Date();
+                const annee = maintenant.getFullYear();
+                const mois = String(maintenant.getMonth() + 1).padStart(2, '0');
+                const jour = String(maintenant.getDate()).padStart(2, '0');
+                return `${annee}-${mois}-${jour}`;
+            }
+
+            function dateCourteDuJour() {
+                const maintenant = new Date();
+                const jour = String(maintenant.getDate()).padStart(2, '0');
+                const mois = String(maintenant.getMonth() + 1).padStart(2, '0');
+                return `${jour}-${mois}`;
+            }
+
+            function convertirDateCourteEnIndex(dateCourte) {
+                if (!dateCourte || typeof dateCourte !== 'string') {
+                    return null;
+                }
+                const morceaux = dateCourte.split('-');
+                if (morceaux.length !== 2) {
+                    return null;
+                }
+                const jour = Number(morceaux[0]);
+                const mois = Number(morceaux[1]);
+                const joursParMois = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+                if (!Number.isInteger(jour) || !Number.isInteger(mois) || mois < 1 || mois > 12) {
+                    return null;
+                }
+                const maxJour = joursParMois[mois - 1];
+                if (jour < 1 || jour > maxJour) {
+                    return null;
+                }
+                let index = jour;
+                for (let i = 0; i < mois - 1; i++) {
+                    index += joursParMois[i];
+                }
+                return index;
+            }
+
+            function estDateDansIntervalle(dateCourte, debut, fin) {
+                const indexDate = convertirDateCourteEnIndex(dateCourte);
+                const indexDebut = convertirDateCourteEnIndex(debut);
+                const indexFin = convertirDateCourteEnIndex(fin);
+                if (indexDate === null || indexDebut === null || indexFin === null) {
+                    return false;
+                }
+                if (indexDebut <= indexFin) {
+                    return indexDate >= indexDebut && indexDate <= indexFin;
+                }
+                return indexDate >= indexDebut || indexDate <= indexFin;
+            }
+
+            function determinerThemeAutomatique(themes) {
+                const dateCourte = dateCourteDuJour();
+                const themesSpecifiques = themes.filter(theme => theme.name !== 'Classique');
+                const themeDate = themesSpecifiques.find(theme => estDateDansIntervalle(dateCourte, theme.dateStart, theme.dateEnd));
+                if (themeDate) {
+                    return themeDate;
+                }
+                return themes.find(theme => theme.name === 'Classique') || null;
+            }
+
+            function appliquerThemeAutomatique(theme) {
+                if (!theme || !theme.name) {
+                    return;
+                }
+                Object.keys(theme).forEach(cle => {
+                    if (cle === 'name' || cle === 'dateStart' || cle === 'dateEnd') {
+                        return;
+                    }
+                    GM_setValue(cle, theme[cle]);
+                });
+                GM_setValue('imgTheme', theme.name);
+                GM_setValue('autoThemeByDateAppliedTheme', theme.name);
+            }
+
+            function appliquerThemeAutomatiqueSiNecessaire(themes) {
+                if (!autoThemeByDateEnabled || !Array.isArray(themes) || themes.length === 0) {
+                    return;
+                }
+                const jourActuel = dateDuJour();
+                const dernierJourApplique = GM_getValue('autoThemeByDateLastApplyDay', '');
+                if (dernierJourApplique === jourActuel) {
+                    return;
+                }
+                const themeAAppliquer = determinerThemeAutomatique(themes);
+                console.log(themeAAppliquer);
+                if (themeAAppliquer) {
+                    appliquerThemeAutomatique(themeAAppliquer);
+                    GM_setValue('autoThemeByDateLastApplyDay', jourActuel);
+                }
+            }
+
+            function rafraichirCacheThemesAuto() {
+                if (!autoThemeByDateEnabled) {
+                    return;
+                }
+                const derniereMaj = Number(GM_getValue('themeApiCacheUpdatedAt', 0)) || 0;
+                const intervalleMaj = 1000 * 60 * 60 * 24 * 7;
+                const token = GM_getValue('apiToken', '');
+                const cacheActuel = GM_getValue('themeApiCacheV2', null);
+                const cacheInexistant = !cacheActuel || !Array.isArray(cacheActuel.themes) || cacheActuel.themes.length === 0;
+                if (!token || (!cacheInexistant && (Date.now() - derniereMaj) < intervalleMaj)) {
+                    return;
+                }
+
+                const formData = new URLSearchParams({
+                    version: version,
+                    token: token
+                });
+
+                fetch(baseUrlPickme + '/shyrka/themes', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: formData.toString()
+                })
+                    .then(response => {
+                    if (response.status === 200) {
+                        return response.json();
+                    }
+                    throw new Error('Erreur lors de la récupération des thèmes automatiques');
+                })
+                    .then(data => {
+                    if (!data || !Array.isArray(data.themes) || data.themes.length === 0) {
+                        return;
+                    }
+                    GM_setValue('themeApiCacheV2', { themes: data.themes });
+                    GM_setValue('themeApiCacheUpdatedAt', Date.now());
+                })
+                    .catch(error => {
+                    console.error(error);
+                });
+            }
+
+            const themesCachees = autoThemeCache && Array.isArray(autoThemeCache.themes) ? autoThemeCache.themes : [];
+            appliquerThemeAutomatiqueSiNecessaire(themesCachees);
+            rafraichirCacheThemesAuto();
+
             (GM_getValue("config")) ? GM_getValue("config") : GM_setValue("config", {});
 
             //PickMe add
             let allFinish = false;
+            let webhookProductsPriceEtvByAsin = {};
 
             //Initialiser ou lire la configuration existante
             let highlightEnabled = GM_getValue("highlightEnabled", true);
@@ -2840,6 +3048,7 @@ NOTES:
             GM_setValue("fastCmd", fastCmd);
             GM_setValue("hideBas", hideBas);
             GM_setValue("statsInReviews", statsInReviews);
+            GM_setValue('autoThemeByDateEnabled', autoThemeByDateEnabled);
 
             GM_setValue("enableRefresh", defaultEnableRefresh);
             GM_setValue("pageToRefresh", defaultPageToRefresh);
@@ -3046,12 +3255,239 @@ NOTES:
 
             replaceImageUrl();
 
-            function appelURL(webhook) {
+            function getWebhookTabName(queueValue) {
+                if (queueValue == "potluck") {
+                    return "RFY";
+                }
+                if (queueValue == "last_chance") {
+                    return "AFA";
+                }
+                if (queueValue == "encore") {
+                    return "AI";
+                }
+                if (queueValue == "all_items") {
+                    return "ALL";
+                }
+                return "";
+            }
+
+            function buildProductSearchUrl(productName, maxLength = 20) {
+                if (!productName) {
+                    return "";
+                }
+
+                const words = String(productName).split(/\s+/u).filter(Boolean);
+                const excludedWords = new Set([
+                    'le', 'la', 'les', 'l',
+                    'un', 'une', 'des',
+                    'du', 'de', 'des',
+                    'à', 'a', 'en', 'dans', 'sur', 'sous', 'par', 'pour', 'avec', 'sans',
+                    'entre', 'vers', 'chez', 'hors', 'avant', 'après', 'depuis', 'pendant',
+                    'contre', 'selon', 'parmi', 'dès',
+                    'et', 'ou', 'ni', 'mais', 'donc', 'or', 'car', 'que', 'qui', 'quoi',
+                    'ce', 'se', 'sa', 'son', 'ses', 'leur', 'leurs', 'mon', 'ma', 'mes',
+                    'ton', 'ta', 'tes', 'votre', 'vos', 'notre', 'nos',
+                    'très', 'plus', 'moins', 'aussi', 'trop', 'tout', 'tous', 'toute', 'toutes',
+                    'est', 'au', 'aux'
+                ]);
+
+                const selectedWords = [];
+                let currentLength = 0;
+
+                words.forEach((rawWord) => {
+                    const word = rawWord.trim();
+                    if (!word) {
+                        return;
+                    }
+
+                    if (excludedWords.has(word.toLowerCase())) {
+                        return;
+                    }
+
+                    if (!/^[A-Za-z0-9]+$/.test(word)) {
+                        return;
+                    }
+
+                    if (word.length > maxLength) {
+                        return;
+                    }
+
+                    const newLength = currentLength === 0 ? word.length : currentLength + 1 + word.length;
+                    if (newLength > maxLength) {
+                        return;
+                    }
+
+                    selectedWords.push(word);
+                    currentLength = newLength;
+                });
+
+                if (selectedWords.length === 0) {
+                    return "";
+                }
+
+                const query = selectedWords.join(' ');
+                return `https://www.amazon.fr/vine/vine-items?search=${encodeURIComponent(query)}`;
+            }
+
+            function waitWebhookDataDelay(delayMs) {
+                return new Promise((resolve) => setTimeout(resolve, delayMs));
+            }
+
+            function normalizeWebhookMoneyValue(value) {
+                if (value === null || typeof value === 'undefined') {
+                    return '';
+                }
+                return String(value).replace(/€/g, '').replace(/\s/g, '').trim();
+            }
+
+            function cacheWebhookPriceEtvByAsin(asin, price, etv) {
+                if (!asin) {
+                    return;
+                }
+                webhookProductsPriceEtvByAsin[asin] = {
+                    price: normalizeWebhookMoneyValue(price),
+                    etv: normalizeWebhookMoneyValue(etv)
+                };
+            }
+
+            function getWebhookPriceEtvByAsin(asin) {
+                if (!asin || !webhookProductsPriceEtvByAsin[asin]) {
+                    return { price: '', etv: '' };
+                }
+                return webhookProductsPriceEtvByAsin[asin];
+            }
+
+            function extractWebhookProductData(produit) {
+                const imageElement = produit ? produit.querySelector('.vvp-item-tile-content img') : null;
+                const asinInput = produit ? produit.querySelector('.'+getStringDetailsBtnSelector()+' input') : null;
+                const orderElement = produit ? (produit.querySelector('.order-item') || produit.querySelector('[data-price], [data-etv]')) : null;
+                const titleLinkElement = produit ? produit.querySelector('.vvp-item-product-title-container > a.a-link-normal') : null;
+                const fullTitleElement = produit ? produit.querySelector('.a-truncate-full.a-offscreen') : null;
+                const cutTitleElement = produit ? produit.querySelector('.a-truncate-cut') : null;
+                const asin = asinInput ? asinInput.getAttribute('data-asin') : '';
+                const productName = (titleLinkElement && titleLinkElement.textContent ? titleLinkElement.textContent.trim() : '')
+                || (fullTitleElement && fullTitleElement.textContent ? fullTitleElement.textContent.trim() : '')
+                || (cutTitleElement && cutTitleElement.textContent ? cutTitleElement.textContent.trim() : '')
+                || (imageElement && imageElement.alt ? imageElement.alt.trim() : '');
+                const cachedPriceEtv = getWebhookPriceEtvByAsin(asin);
+                const productPrice = cachedPriceEtv.price || (orderElement ? normalizeWebhookMoneyValue(orderElement.dataset.price || '') : '');
+                const productEtv = cachedPriceEtv.etv || (orderElement ? normalizeWebhookMoneyValue(orderElement.dataset.etv || '') : '');
+                const productUrl = asin ? `https://www.amazon.fr/dp/${asin}` : '';
+
+                return {
+                    product_name: productName,
+                    product_url: productUrl,
+                    product_page_url: window.location.href,
+                    product_search_url: buildProductSearchUrl(productName),
+                    product_image_url: imageElement ? imageElement.src : '',
+                    product_tab: getWebhookTabName(valeurQueue),
+                    product_price: productPrice,
+                    product_etv: productEtv
+                };
+            }
+
+            async function extractWebhookProductDataWithWait(produit, shouldWaitForPriceData = false, maxAttempts = 12, delayMs = 250) {
+                let webhookProductData = extractWebhookProductData(produit);
+                if (!shouldWaitForPriceData || webhookProductData.product_price || webhookProductData.product_etv) {
+                    return webhookProductData;
+                }
+
+                for (let attempt = 0; attempt < maxAttempts; attempt++) {
+                    await waitWebhookDataDelay(delayMs);
+                    webhookProductData = extractWebhookProductData(produit);
+                    if (webhookProductData.product_price || webhookProductData.product_etv) {
+                        return webhookProductData;
+                    }
+                }
+
+                return webhookProductData;
+            }
+
+            async function getNewProductsWebhookData(shouldWaitForPriceData = false) {
+                const newProducts = document.querySelectorAll('.newproduct');
+                const productsData = await Promise.all(Array.from(newProducts).map((produit) => extractWebhookProductDataWithWait(produit, shouldWaitForPriceData)));
+                return productsData;
+            }
+
+            function getWebhookTestUrl(webhook) {
+                const testValues = {
+                    '{product_name}': 'Produit Test',
+                    '{product_url}': 'https://www.amazon.fr/dp/B0FWKFG2SZ',
+                    '{product_page_url}': 'https://www.amazon.fr/vine/vine-items?queue=potluck',
+                    '{product_search_url}': 'https://www.amazon.fr/vine/vine-items?search=usb',
+                    '{product_image_url}': 'https://vinepick.me/img/Pas-d-image-disponible-svg.png',
+                    '{product_tab}': 'RFY',
+                    '{product_price}': '29.99',
+                    '{product_etv}': '0.00',
+                    '{product_count}': '2',
+                    '{product_name_list}': 'Produit Test 1 || Produit Test 2',
+                    '{product_url_list}': 'https://www.amazon.fr/dp/B0FWKFG2SZ || https://www.amazon.fr/dp/B0G4ZT8HQ1',
+                    '{product_page_url_list}': 'https://www.amazon.fr/vine/vine-items?queue=potluck || https://www.amazon.fr/vine/vine-items?queue=potluck',
+                    '{product_search_url_list}': 'https://www.amazon.fr/vine/vine-items?search=usb || https://www.amazon.fr/vine/vine-items?search=cable',
+                    '{product_image_url_list}': 'https://vinepick.me/img/Pas-d-image-disponible-svg.png || https://vinepick.me/img/Pas-d-image-disponible-svg.png',
+                    '{product_tab_list}': 'RFY || RFY',
+                    '{product_price_list}': '29.99 || 49.99',
+                    '{product_etv_list}': '0.00 || 12.34',
+                };
+
+                let testWebhook = webhook;
+                Object.entries(testValues).forEach(([key, value]) => {
+                    testWebhook = testWebhook.replaceAll(key, value);
+                });
+
+                return testWebhook.replace(/\{[^}]+\}/g, 'VALEUR_TEST');
+            }
+
+            function replaceWebhookPlaceholders(webhook, products = []) {
+                const safeProducts = Array.isArray(products) ? products : [];
+                const firstProduct = safeProducts[0] || {};
+                const fields = [
+                    'product_name',
+                    'product_url',
+                    'product_page_url',
+                    'product_search_url',
+                    'product_image_url',
+                    'product_tab',
+                    'product_price',
+                    'product_etv'
+                ];
+
+                let resolvedWebhook = webhook;
+                fields.forEach((field) => {
+                    const firstValue = encodeURIComponent(firstProduct[field] || 'N/C');
+                    resolvedWebhook = resolvedWebhook.replaceAll(`{${field}}`, firstValue);
+
+                    const listValue = safeProducts.map((product) => (product && product[field]) ? encodeURIComponent(product[field]) : encodeURIComponent('N/C')).join(' || ');
+                    resolvedWebhook = resolvedWebhook.replaceAll(`{${field}_list}`, listValue);
+
+                    safeProducts.forEach((product, index) => {
+                        const indexedValue = (product && product[field]) ? encodeURIComponent(product[field]) : encodeURIComponent('N/C');
+                        resolvedWebhook = resolvedWebhook.replaceAll(`{${field}_${index + 1}}`, indexedValue);
+                    });
+                });
+
+                resolvedWebhook = resolvedWebhook.replaceAll('{product_count}', String(safeProducts.length));
+                return resolvedWebhook;
+            }
+
+            function appelURL(webhook, products = []) {
+                const webhookWithPlaceholders = replaceWebhookPlaceholders(webhook, products);
+                const hasEncodedSequences = /%[0-9A-Fa-f]{2}/.test(webhookWithPlaceholders);
+                const resolvedWebhook = hasEncodedSequences ? webhookWithPlaceholders : encodeURI(webhookWithPlaceholders);
+                /*console.log('[PickMe][Webhook]Payload envoyé', {
+                    url: resolvedWebhook,
+                    productsCount: Array.isArray(products) ? products.length : 0,
+                    firstProduct: Array.isArray(products) && products.length > 0 ? products[0] : null,
+                    pageUrl: window.location.href
+                });*/
                 const formData = new URLSearchParams({
                     version: version,
                     token: API_TOKEN,
-                    url: webhook,
+                    url: resolvedWebhook,
+                    products: JSON.stringify(products),
+                    pageUrl: window.location.href
                 });
+                console.log(formData);
                 return fetch(baseUrlPickme + "/shyrka/webhookreco", {
                     method: "POST",
                     headers: {
@@ -4097,7 +4533,7 @@ NOTES:
                         width: 100%;
                 }
                 `;
-                document.head.appendChild(style);
+                appendToHeadWhenReady(style);
             }
 
             function ajouterIconeEtFonctionCacher() {
@@ -4677,7 +5113,7 @@ NOTES:
               display: none !important;
             }
          `
-            document.head.appendChild(styleFooter);
+            appendToHeadWhenReady(styleFooter);
 
             //Nombre de colonnes fixe
             if (apiOk && columnEnabled) {
@@ -4688,7 +5124,7 @@ NOTES:
                 grid-template-columns: repeat(${nbColumn}, 1fr) !important;
             }
         `;
-                document.head.appendChild(style);
+                appendToHeadWhenReady(style);
             }
 
             //Agrandir la fenetre des adresses
@@ -4701,7 +5137,7 @@ NOTES:
                 width: 900px !important;
             }
             `
-                document.head.appendChild(styleAddress);
+                appendToHeadWhenReady(styleAddress);
             }
 
 
@@ -4736,7 +5172,7 @@ NOTES:
 		`;
                 }
                 //Ajout du style à la page
-                document.head.appendChild(style);
+                appendToHeadWhenReady(style);
                 //Remonter les variantes dans les détails
                 if (mobileEnabled) {
                     var variationsContainer = document.getElementById('vvp-product-details-modal--variations-container');
@@ -4854,7 +5290,7 @@ NOTES:
 }
 `;
                 }
-                document.head.appendChild(styleCss);
+                appendToHeadWhenReady(styleCss);
             }
 
             //Affichage mobile
@@ -5484,7 +5920,7 @@ li.a-last a span.larr {      /* Cible le span larr dans les li a-last */
 }
 `;
                 }
-                document.head.appendChild(mobileCss);
+                appendToHeadWhenReady(mobileCss);
             }
 
             //Affichage mobile pour ceux qui on pas RR
@@ -5508,7 +5944,7 @@ body {
   display: none !important;
 }
 `
-                        document.head.appendChild(styleHeaderRR);
+                        appendToHeadWhenReady(styleHeaderRR);
                     }
                     var mobileCssRR = document.createElement('style');
 
@@ -5845,7 +6281,7 @@ li.a-last a span.larr {      /* Cible le span larr dans les li a-last */
   display: none;
 }
 		`;
-                    document.head.appendChild(mobileCssRR);
+                    appendToHeadWhenReady(mobileCssRR);
                 }
             }
 
@@ -5878,7 +6314,7 @@ li.a-last a span.larr {      /* Cible le span larr dans les li a-last */
   }
 }
 `;
-                document.head.appendChild(noapiCss);
+                appendToHeadWhenReady(noapiCss);
             }
 
             //Changement du texte des boutons dans Commandes et Avis
@@ -5954,6 +6390,7 @@ li.a-last a span.larr {      /* Cible le span larr dans les li a-last */
             addGlobalStyle(`.a-button-discord > .a-button-text { padding-left: 6px; }`);
             addGlobalStyle(`.a-button-discord-icon { background-image: url(https://m.media-amazon.com/images/S/sash/Gt1fHP07TsoILq3.png); content: ""; padding: 10px 10px 10px 10px; background-size: 512px 512px; background-repeat: no-repeat; margin-left: 10px; vertical-align: middle; }`);
             addGlobalStyle(`.a-button-discord.mobile-vertical { margin-top: 7px; margin-left: 0px; }`);
+            addGlobalStyle(`.options-refresh label input[type="checkbox"].pm-boost-bypass-checkbox { position: static !important; top: auto !important; bottom: auto !important; transform: none !important; vertical-align: middle !important; }`);
 
             if (savedTheme === "dark") {
                 addGlobalStyle(`
@@ -6042,7 +6479,7 @@ li.a-last a span.larr {      /* Cible le span larr dans les li a-last */
                         }
                     });
                     observer.observe(parent, { childList: true, subtree: true });
-                    const timer = setTimeout(() => {
+                    const timer = setTimeout(async () => {
                         observer.disconnect();
                         resolve(null);
                     }, timeout);
@@ -6339,11 +6776,17 @@ li.a-last a span.larr {      /* Cible le span larr dans les li a-last */
                     addFastCmd();
                 }
 
+                if (listElements.length > 0 && ordersInfos && ordersEnabled && (window.location.href.startsWith("https://www.amazon.fr/vine/vine-items?queue=") || window.location.href.startsWith("https://www.amazon.fr/vine/vine-items?search="))) {
+                    await ordersPost(listElementsOrder);
+                }
+
                 //Appel des webhooks
                 if (imgNew && apiOk && valeurQueue == "potluck") {
                     //Webhook classique
                     if (callUrlEnabled && callUrl) {
-                        appelURL(callUrl);
+                        const shouldWaitForPriceData = ordersInfos && ordersEnabled;
+                        const newProductsWebhookData = await getNewProductsWebhookData(shouldWaitForPriceData);
+                        appelURL(callUrl, newProductsWebhookData);
                     }
                     //Webhook avec filtres
                     if (callUrlFavEnabled && callUrlFav) {
@@ -6386,17 +6829,18 @@ li.a-last a span.larr {      /* Cible le span larr dans les li a-last */
                         setTimeout(() => {
                             const newProducts = document.querySelectorAll('.newproduct');
                             if (newProducts.length > 0) {
-                                newProducts.forEach((produit) => {
-                                    const nameElement = produit.querySelector('.a-truncate-full.a-offscreen');
-                                    if (nameElement) {
-                                        const fullName = nameElement.textContent.toLowerCase().trim().replace(/\s+/g, '');
+                                newProducts.forEach(async (produit) => {
+                                    const shouldWaitForPriceData = ordersInfos && ordersEnabled;
+                                    const webhookProductData = await extractWebhookProductDataWithWait(produit, shouldWaitForPriceData);
+                                    if (webhookProductData.product_name) {
+                                        const fullName = webhookProductData.product_name.toLowerCase().trim().replace(/\s+/g, '');
                                         if (callUrlTypeFav == "callFavOnly") {
                                             if (favArrayUrl.length > 0 && favArrayUrl.some(regex => regex.test(fullName))) {
-                                                appelURL(callUrlFav);
+                                                appelURL(callUrlFav, [webhookProductData]);
                                             }
                                         } else if (callUrlTypeFav == "callExcludeHidden") {
                                             if (hiddenArrayUrl.length > 0 && !hiddenArrayUrl.some(regex => regex.test(fullName))) {
-                                                appelURL(callUrlFav);
+                                                appelURL(callUrlFav, [webhookProductData]);
                                             }
                                         }
                                     }
@@ -6522,10 +6966,6 @@ li.a-last a span.larr {      /* Cible le span larr dans les li a-last */
                     });
                 }
 
-                if (listElements.length > 0 && ordersInfos && ordersEnabled && (window.location.href.startsWith("https://www.amazon.fr/vine/vine-items?queue=") || window.location.href.startsWith("https://www.amazon.fr/vine/vine-items?search="))) {
-                    ordersPost(listElementsOrder);
-                }
-
             });
 
             function resetEtMiseAJour() {
@@ -6555,7 +6995,7 @@ li.a-last a span.larr {      /* Cible le span larr dans les li a-last */
                 const styleSheet = document.createElement("style");
                 styleSheet.type = "text/css";
                 styleSheet.innerText = styles;
-                document.head.appendChild(styleSheet);
+                appendToHeadWhenReady(styleSheet);
 
                 let imageUrl = baseUrlPickme + "/img/arrowyellowleft.png";
                 if (savedButtonColor === "blue") {
@@ -7131,13 +7571,17 @@ body.modal-open {
   box-shadow: 0 1px 2px rgba(6, 44, 78, 0.05);
 }
 
+#advancedConfigPopup label {
+  margin-bottom: 8px !important;
+}
+
 #configPopup label input[type="checkbox"], #notifConfigPopup label input[type="checkbox"] {
   margin-right: 10px;
 }
 
 #advancedConfigPopup input[type="checkbox"] {
-  margin-top: 0 !important;
-  align-self: center;
+  margin-top: 1px !important;
+  align-self: flex-start;
   flex-shrink: 0;
 }
 
@@ -7318,7 +7762,7 @@ select.btn-like {
   text-align: left;
 }
 `;
-            document.head.appendChild(styleMenu);
+            appendToHeadWhenReady(styleMenu);
             //Assurez-vous que les boutons sont toujours accessibles
             function adjustPopupLayout() {
                 const popup = document.getElementById('configPopup');
@@ -7562,7 +8006,7 @@ select.btn-like {
     cursor: not-allowed !important;  /* Le curseur reste le même */
   }
 `;
-                document.head.appendChild(style);
+                appendToHeadWhenReady(style);
                 document.body.classList.add('modal-open');
                 notifyPluginMenuOpen();
 
@@ -8300,7 +8744,7 @@ ${addressOptions.length && isPlus && apiOk ? `
         <h2 id="configPopupHeader">Configuration des mots-clés<span id="closeFavPopup" class="pm-popup-close" style="float: right; cursor: pointer;">&times;</span></h2>
         <div style="margin-bottom: 10px;">
             <label style="display: flex; align-items: center; gap: 8px;">
-                <input type="checkbox" id="useLegacyKeywordsMode" ${useLegacyKeywordsMode ? 'checked' : ''}>
+                <input type="checkbox" id="useLegacyKeywordsMode" style="position: relative; transform: translateY(-2px);" ${useLegacyKeywordsMode ? 'checked' : ''}>
                 Utiliser l'ancien mode (saisie avec des virgules)
             </label>
         </div>
@@ -8415,6 +8859,10 @@ ${addressOptions.length && isPlus && apiOk ? `
                     }
                 })
                     .then(data => {
+                    if (data && Array.isArray(data.themes) && data.themes.length > 0) {
+                        GM_setValue('themeApiCacheV2', { themes: data.themes });
+                        GM_setValue('themeApiCacheUpdatedAt', Date.now());
+                    }
                     const presetDropdown = document.getElementById('presetDropdown');
                     presetDropdown.innerHTML = "";
                     //Ajout des thèmes du serveur
@@ -8726,19 +9174,23 @@ ${addressOptions.length && isPlus && apiOk ? `
                         checkbox.id = 'optapi_' + key;
                     }
                     checkbox.checked = value;
-                    checkbox.style.marginRight = '5px';
 
                     const labelEl = document.createElement('label');
                     labelEl.htmlFor = checkbox.id;
-                    labelEl.innerHTML = label.replace(/\n/g, '<br>');
                     labelEl.style.flex = '1';
+                    labelEl.style.display = 'flex';
+                    labelEl.style.alignItems = 'flex-start';
+                    labelEl.style.gap = '5px';
+                    labelEl.appendChild(checkbox);
+                    const labelText = document.createElement('span');
+                    labelText.innerHTML = label.replace(/\n/g, '<br>');
+                    labelEl.appendChild(labelText);
 
                     //Si isPremium est défini et vaut false, on désactive (grise) la case
                     if (typeof isPremium !== 'undefined' && isPremium === false) {
                         checkbox.disabled = true;
                     }
 
-                    optionDiv.appendChild(checkbox);
                     optionDiv.appendChild(labelEl);
                     optionsContainer.appendChild(optionDiv);
 
@@ -8759,6 +9211,7 @@ ${addressOptions.length && isPlus && apiOk ? `
                     const labelEl = document.createElement('label');
                     labelEl.htmlFor = 'opt_' + key;
                     labelEl.style.marginRight = '10px';
+
                     const lines = label.split('\n');
                     lines.forEach((line, index) => {
                         labelEl.appendChild(document.createTextNode(line));
@@ -8768,15 +9221,18 @@ ${addressOptions.length && isPlus && apiOk ? `
                     });
                     labelEl.appendChild(document.createTextNode(' '));
                     if (linkURL) {
-                        labelEl.appendChild(document.createTextNode('('));
                         if (!linkText) { linkText = 'Guide'; }
+                        const guideWrapper = document.createElement('span');
+                        guideWrapper.appendChild(document.createTextNode('('));
                         const guideLink = document.createElement('a');
                         guideLink.href = linkURL;
                         guideLink.textContent = linkText;
                         guideLink.target = '_blank';
                         guideLink.rel = 'noopener noreferrer';
                         labelEl.appendChild(guideLink);
-                        labelEl.appendChild(document.createTextNode(')'));
+                        guideWrapper.appendChild(guideLink);
+                        guideWrapper.appendChild(document.createTextNode(')'));
+                        labelEl.appendChild(guideWrapper);
                     }
                     optionDiv.appendChild(labelEl);
 
@@ -8837,7 +9293,7 @@ ${addressOptions.length && isPlus && apiOk ? `
                             playButton.textContent = 'Tester';
                             playButton.addEventListener('click', function() {
                                 if (isValidUrl(input.value)) {
-                                    appelURL(input.value);
+                                    appelURL(getWebhookTestUrl(input.value));
                                 } else {
                                     alert("Merci de saisir une URL de Webhook pour tester.");
                                 }
@@ -9097,7 +9553,7 @@ ${addressOptions.length && isPlus && apiOk ? `
   font-size: 1em;
 }
 `;
-                        document.head.appendChild(style);
+                        appendToHeadWhenReady(style);
                     }
 
                     //Handlers de drag & drop
@@ -9220,6 +9676,7 @@ ${addressOptions.length && isPlus && apiOk ? `
 
                 ajouterSousTitre('Thèmes');
                 ajouterTexte('Le thème ne change que les valeurs esthétiques comme les images (ainsi que leurs emplacements) et les sons.\nCela exclu toutes les cases à cocher ou encore les Webhooks par exemple.\nL\'export et l\'import suivent également cette logique.\nEn revanche, si vous faites "Ajouter", cela sauvegarde les éléments personnels comme les Webhooks dans le thème (mais toujours pas les cases à cocher).');
+                ajouterOptionCheckbox('autoThemeByDateEnabled', 'Activer le changement automatique de thème selon la date');
                 const presetDropdownDiv = document.createElement('div');
                 presetDropdownDiv.style.margin = '10px 0';
                 const presetLabel = document.createElement('label');
@@ -9364,6 +9821,7 @@ ${addressOptions.length && isPlus && apiOk ? `
                 ajouterSeparateur();
                 ajouterOptionCheckbox('callUrlEnabled', '(Webhook) Appeler une URL');
                 ajouterOptionTexte('callUrl', 'URL du Webhook', '');
+                ajouterTexte("Variables optionnelles pour l'URL du webhook :\n{product_name} nom du produit (1er produit)\n{product_url} URL Amazon du produit (1er produit)\n{product_page_url} URL de la page Vine en cours\n{product_search_url} URL de recherche Amazon du produit (1er produit)\n{product_image_url} URL de l'image du produit (1er produit)\n{product_tab} onglet du produit (RFY/AFA/AI/ALL)\n{product_price} prix du produit (1er produit, si disponible)\n{product_etv} ETV du produit (1er produit, si disponible)\n{product_count} nombre de produits envoyés\nMulti-produits : utilisez {product_name_list}, {product_url_list}, etc.");
                 ajouterSeparateur();
                 ajouterOptionCheckbox('callUrlFavEnabled', '(Webhook avec filtres) Appeler une URL');
                 ajouterOptionTexte('callUrlFav', 'URL du Webhook avec filtres', '');
@@ -9588,7 +10046,7 @@ ${addressOptions.length && isPlus && apiOk ? `
                         this.value = '';
                         optCallUrlEnabled.checked = false;
                         alert("URL invalide. Veuillez entrer une URL valide.");
-                    } else if (urlValue !== '') {
+                    } else if (urlValue == '') {
                         optCallUrlEnabled.checked = false;
                     }
                 });
@@ -9608,7 +10066,7 @@ ${addressOptions.length && isPlus && apiOk ? `
                         this.value = '';
                         optCallUrlFavEnabled.checked = false;
                         alert("URL invalide. Veuillez entrer une URL valide.");
-                    } else if (urlValue !== '') {
+                    } else if (urlValue == '') {
                         optCallUrlFavEnabled.checked = false;
                     }
                 });
@@ -10698,7 +11156,7 @@ ${addressOptions.length && isPlus && apiOk ? `
       padding: 0 !important;
     }
 `;
-                    document.head.appendChild(style);
+                    appendToHeadWhenReady(style);
 
                     //Flag pour gérer l'inversion du tri
                     let isTriInverse = inverseSortFav;
@@ -10939,7 +11397,7 @@ ${addressOptions.length && isPlus && apiOk ? `
 						color: #b35a00;
 					}
                   `;
-                            document.head.appendChild(style);
+                            appendToHeadWhenReady(style);
                         }
 
                         //Créer le bloc "Processus de commande"
@@ -11572,7 +12030,7 @@ ${addressOptions.length && isPlus && apiOk ? `
                 linkElement.rel = 'stylesheet';
                 linkElement.type = 'text/css';
 
-                document.head.appendChild(linkElement);
+                appendToHeadWhenReady(linkElement);
             }
 
             function getFlag(countryCode) {
@@ -11595,6 +12053,7 @@ ${addressOptions.length && isPlus && apiOk ? `
                     const url = "https://www.amazon.fr/dp/" + asin;
                     const orderData = data.find(d => d.url === url);
                     if (!orderData) return;
+                    cacheWebhookPriceEtvByAsin(asin, orderData.price, orderData.etv_real);
                     const flagCountry = getFlag(orderData.flag);
                     if (!flagETV && flagEnabled) {
                         changeButtonProductPlus(item, orderData.limited, orderData.nb_variations, flagCountry);
@@ -12790,7 +13249,7 @@ ${addressOptions.length && isPlus && apiOk ? `
                 100% { opacity: 0; }
             }
         \`;
-                    document.head.appendChild(style);
+                    appendToHeadWhenReady(style);
 
                     var symbolColorPairs = [
                         { symbol: '★', color: '#FFD700' },
@@ -14224,7 +14683,7 @@ ${addressOptions.length && isPlus && apiOk ? `
 			outline: none;
 		}
 		`;
-                    document.head.appendChild(style);
+                    appendToHeadWhenReady(style);
                 }
             }
 
@@ -15226,18 +15685,18 @@ ${addressOptions.length && isPlus && apiOk ? `
 
                     const boostContent = document.createElement('div');
                     boostContent.style.display = 'flex';
-                    boostContent.style.alignItems = 'center';
+
                     boostContent.style.flexWrap = 'wrap';
                     boostContent.style.columnGap = '15px';
                     boostContent.style.rowGap = '6px';
                     boostContainer.appendChild(boostContent);
-
                     const boostEnableLabel = document.createElement('label');
                     boostEnableLabel.style.display = 'flex';
                     boostEnableLabel.style.alignItems = 'center';
                     boostEnableLabel.style.gap = '5px';
                     const boostEnableCheckbox = document.createElement('input');
                     boostEnableCheckbox.type = 'checkbox';
+                    boostEnableCheckbox.classList.add('pm-boost-bypass-checkbox');
                     boostEnableLabel.appendChild(boostEnableCheckbox);
                     boostEnableLabel.appendChild(document.createTextNode('Activer'));
                     boostContent.appendChild(boostEnableLabel);
@@ -15282,6 +15741,7 @@ ${addressOptions.length && isPlus && apiOk ? `
                     boostBypassLabel.style.gap = '5px';
                     const boostBypassCheckbox = document.createElement('input');
                     boostBypassCheckbox.type = 'checkbox';
+                    boostBypassCheckbox.classList.add('pm-boost-bypass-checkbox');
                     boostBypassLabel.appendChild(boostBypassCheckbox);
                     boostBypassLabel.appendChild(document.createTextNode('Ignorer la plage horaire'));
                     boostContent.appendChild(boostBypassLabel);
@@ -16709,7 +17169,7 @@ ${addressOptions.length && isPlus && apiOk ? `
               margin-left: 1% !important; /* Annuler la marge droite si elle est définie ailleurs */
             }*/
             `;
-            document.head.appendChild(styleMenu);
+            appendToHeadWhenReady(styleMenu);
 
             //Fonction pour afficher une boîte de dialogue pour définir le pourcentage cible
             function promptForTargetPercentage() {
@@ -16928,7 +17388,7 @@ ${addressOptions.length && isPlus && apiOk ? `
                 console.log("Votes :",entry.helpfulVotes);
                 const votesUtiles = entry.helpfulVotes !== undefined && entry.helpfulVotes !== null && entry.helpfulVotes !== ''
                 ? entry.helpfulVotes
-                : 'N/C';
+                : encodeURIComponent('N/C');
 
                 popup.innerHTML = `
                     <h3 style="margin: 0 0 10px 0;">Détail de l'avis</h3>
@@ -18283,7 +18743,7 @@ ${addressOptions.length && isPlus && apiOk ? `
                 const styleSheet = document.createElement("style");
                 styleSheet.type = "text/css";
                 styleSheet.innerText = styles;
-                document.head.appendChild(styleSheet);
+                appendToHeadWhenReady(styleSheet);
 
                 //Fonctions pour les couleurs des avis
                 //Fonction pour changer la couleur de la barre en fonction du pourcentage (obsolète)
@@ -18904,7 +19364,13 @@ ${addressOptions.length && isPlus && apiOk ? `
                 function targetPercentage() {
                     if (document.URL.startsWith("https://www.amazon.fr/vine/account")) {
                         const { percentage, evaluatedArticles } = extractData();
-                        const storedValue = parseFloat(localStorage.getItem('gestavisTargetPercentage'));
+                        const rawStoredValue = localStorage.getItem('gestavisTargetPercentage');
+                        let storedValue = parseFloat(rawStoredValue);
+                        if (!Number.isFinite(storedValue)) {
+                            console.warn('[PickMe] Valeur invalide pour gestavisTargetPercentage:', rawStoredValue, '-> fallback 90');
+                            storedValue = 90;
+                            localStorage.setItem('gestavisTargetPercentage', String(storedValue));
+                        }
                         const missingArticles = calculateMissingReviews(percentage, evaluatedArticles, storedValue);
                         const doFireWorks = localStorage.getItem('doFireWorks');
 
@@ -19158,7 +19624,7 @@ ${addressOptions.length && isPlus && apiOk ? `
                 color: #FF0000 !important;
             }
                 `;
-                document.head.appendChild(styleReview);
+                appendToHeadWhenReady(styleReview);
                 //Fonction pour mettre en surbrillance les dates en fonction de leur âge
                 function highlightDates() {
                     if (window.location.href.includes('review-type=completed') || window.location.href.includes('orders')) {
@@ -20181,7 +20647,7 @@ ${addressOptions.length && isPlus && apiOk ? `
                         100% { transform: translate(var(--x, 0), var(--y, 0)) scale(0.5); opacity: 0; }
                     }
                 `;
-                    document.head.appendChild(style);
+                    appendToHeadWhenReady(style);
 
                     //Fonction pour créer une particule de feu d'artifice
                     function createParticle(x, y, color, angle, speed) {
@@ -20717,7 +21183,7 @@ ${addressOptions.length && isPlus && apiOk ? `
                             if (dropZone) {
                                 const styleDrag = document.createElement('style');
                                 styleDrag.textContent = '.rr-dragover { outline: 2px dashed #1E90FF; }';
-                                document.head.appendChild(styleDrag);
+                                appendToHeadWhenReady(styleDrag);
                                 ['dragenter', 'dragover'].forEach(function (evt) {
                                     dropZone.addEventListener(evt, function (e) {
                                         e.preventDefault();
@@ -20846,7 +21312,7 @@ ${addressOptions.length && isPlus && apiOk ? `
                         display: none !important;
                     }
                 `;
-                    document.head.appendChild(styleFooter);
+                    appendToHeadWhenReady(styleFooter);
                 }
 
                 //Suppression footer partout sauf sur le profil car configurable
@@ -20861,7 +21327,7 @@ ${addressOptions.length && isPlus && apiOk ? `
                         display: none !important;
                     }
             `
-                    document.head.appendChild(supFooter);
+                    appendToHeadWhenReady(supFooter);
                 }
 
                 window.addEventListener('load', function () {
@@ -20931,7 +21397,7 @@ ${addressOptions.length && isPlus && apiOk ? `
             }
             `;
 
-                        document.head.appendChild(style);
+                        appendToHeadWhenReady(style);
                     }
 
                     //Déplacer "Testeur Vine depuis" sous "Mon statut Vine"
