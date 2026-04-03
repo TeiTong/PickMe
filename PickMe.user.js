@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PickMe
 // @namespace    http://tampermonkey.net/
-// @version      3.8.0
+// @version      3.8.1
 // @description  Plugin d'aide à la navigation pour les membres du discord Amazon Vine FR : https://discord.gg/amazonvinefr
 // @author       Créateur/Codeur principal : MegaMan / Codeur secondaire : Sulff, ChatGPT, Claude et Gemini / Testeurs : Louise, L'avocat du Diable et Popato (+ du code de lelouch_di_britannia, FMaz008 et Thorvarium)
 // @match        https://www.amazon.fr/vine/vine-items
@@ -13249,7 +13249,7 @@ ${addressOptions.length && isPlus && apiOk ? `
                 100% { opacity: 0; }
             }
         \`;
-                    appendToHeadWhenReady(style);
+                    (document.head || document.documentElement).appendChild(style);
 
                     var symbolColorPairs = [
                         { symbol: '★', color: '#FFD700' },
